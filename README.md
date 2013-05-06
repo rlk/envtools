@@ -33,9 +33,9 @@ The output is sampled using one of several sampling patterns, which give a quali
 <table>
     <tr><td><img src="etc/cent.png"></td><td><b>cent</b> &hellip; One sample at the centroid of the output pixel</td></tr>
     <tr><td><img src="etc/rgss.png"></td><td><b>rgss</b> &hellip; Rotated-grid super sampling</td></tr>
-    <tr><td><img src="etc/box2.png"></td><td><b>box2</b> &hellip; 2 &times;2 super sampling</td></tr>
-    <tr><td><img src="etc/box3.png"></td><td><b>box3</b> &hellip; 3 &times;3 super sampling</td></tr>
-    <tr><td><img src="etc/box4.png"></td><td><b>box4</b> &hellip; 4 &times;4 super sampling</td></tr>
+    <tr><td><img src="etc/box2.png"></td><td><b>box2</b> &hellip; 2 &times; 2 super sampling</td></tr>
+    <tr><td><img src="etc/box3.png"></td><td><b>box3</b> &hellip; 3 &times; 3 super sampling</td></tr>
+    <tr><td><img src="etc/box4.png"></td><td><b>box4</b> &hellip; 4 &times; 4 super sampling</td></tr>
 </table>
 
 This tool remaps the input image `src.tif` to the output `dst.tif`. The sample depth and format of the input TIFF is preserved in the output.
