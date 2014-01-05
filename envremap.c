@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <math.h>
 
+#include "header.h"
 #include "gray.h"
 #include "sRGB.h"
 
@@ -69,13 +70,6 @@ typedef void (*filter)(const image *, float, float, float *);
 
 typedef int (*to_img)(int *, float *, float *, int, int, const float *);
 typedef int (*to_env)(int,   float,   float,   int, int,       float *);
-
-/*----------------------------------------------------------------------------*/
-/* A small set of single precision mathematical utilities.                    */
-
-#define PI2 1.5707963f
-#define PI  3.1415927f
-#define TAU 6.2831853f
 
 static inline float lerp(float a, float b, float k)
 {
@@ -712,8 +706,8 @@ static int xfm(const float *rot, float *v)
 {
     if (rot[0])
     {
-        float s = sinf(rot[0] * M_PI / 180.0f);
-        float c = cosf(rot[0] * M_PI / 180.0f);
+        float s = sinf(rot[0] * PI / 180.0f);
+        float c = cosf(rot[0] * PI / 180.0f);
         float y = v[1] * c - v[2] * s;
         float z = v[1] * s + v[2] * c;
 
@@ -721,8 +715,8 @@ static int xfm(const float *rot, float *v)
     }
     if (rot[1])
     {
-        float s = sinf(rot[1] * M_PI / 180.0f);
-        float c = cosf(rot[1] * M_PI / 180.0f);
+        float s = sinf(rot[1] * PI / 180.0f);
+        float c = cosf(rot[1] * PI / 180.0f);
         float z = v[2] * c - v[0] * s;
         float x = v[2] * s + v[0] * c;
 
@@ -730,8 +724,8 @@ static int xfm(const float *rot, float *v)
     }
     if (rot[2])
     {
-        float s = sinf(rot[2] * M_PI / 180.0f);
-        float c = cosf(rot[2] * M_PI / 180.0f);
+        float s = sinf(rot[2] * PI / 180.0f);
+        float c = cosf(rot[2] * PI / 180.0f);
         float x = v[0] * c - v[1] * s;
         float y = v[0] * s + v[1] * c;
 
