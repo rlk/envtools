@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <math.h>
 
+#include "header.h"
 #include "gray.h"
 #include "sRGB.h"
 
@@ -174,7 +175,7 @@ double calc_domega(const double *v00,
                    const double *v11)
 {
     return (solid_angle(v00, v11, v01) +
-            solid_angle(v11, v00, v10)) / (4 * M_PI);
+            solid_angle(v11, v00, v10)) / (4 * PI);
 }
 
 void calc_Y(double *Y, double x, double y, double z)
