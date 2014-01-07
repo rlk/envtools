@@ -28,6 +28,8 @@
 #include "gray.h"
 #include "sRGB.h"
 
+#define PI  3.1415927f
+
 /* See "An Efficient Representation for Irradiance Environment Maps" by       */
 /* Ramamorrthi & Handrahan, SIGGRAPH 2001                                     */
 
@@ -174,7 +176,7 @@ double calc_domega(const double *v00,
                    const double *v11)
 {
     return (solid_angle(v00, v11, v01) +
-            solid_angle(v11, v00, v10)) / (4 * M_PI);
+            solid_angle(v11, v00, v10)) / (4 * PI);
 }
 
 void calc_Y(double *Y, double x, double y, double z)
