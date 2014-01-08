@@ -3,7 +3,7 @@ CC=gcc
 #CFLAGS= -std=c99 -pedantic -Wall -g -m64 -fstrict-aliasing
 CFLAGS= -std=c99 -pedantic -Wall -O3 -m64 -fstrict-aliasing -fopenmp -march=athlon64
 
-LIBS= -ltiff -ljpeg -lpng -lz
+LIBS= -ltiff -ljpeg -lpng -lz -lm
 
 #-------------------------------------------------------------------------------
 
