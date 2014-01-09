@@ -1,9 +1,10 @@
 #CC= $(firstword $(wildcard /usr/local/bin/gcc /usr/bin/gcc))
 CC=gcc
-#CFLAGS= -std=c99 -pedantic -Wall -g -m64 -fstrict-aliasing
-CFLAGS= -std=c99 -pedantic -Wall -O3 -m64 -fstrict-aliasing -fopenmp -march=athlon64
+CFLAGS= -std=c99 -pedantic -Wall -g -m64 -fstrict-aliasing
+#CFLAGS= -std=c99 -pedantic -Wall -O3 -m64 -fstrict-aliasing -fopenmp -march=athlon64
 
-LIBS= -ltiff -ljpeg -lpng -lz -lm
+LIBS= -L/usr/local/lib -ltiff -ljpeg -lpng -lz -lm
+INCS= -I/usr/local/include
 
 #-------------------------------------------------------------------------------
 
