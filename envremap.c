@@ -146,11 +146,11 @@ int TIFFReadFloatScanline(TIFF *T, float *dst, uint32 r)
     static tdata_t *src = NULL;
     static tsize_t  len = 0;
 
-    uint32 w;
-    uint16 c;
-    uint16 b;
-    uint16 s;
-    uint16 p;
+    uint32 w = 0;
+    uint16 c = 0;
+    uint16 b = 0;
+    uint16 s = 0;
+    uint16 p = 0;
 
     TIFFGetField(T, TIFFTAG_IMAGEWIDTH,      &w);
     TIFFGetField(T, TIFFTAG_SAMPLESPERPIXEL, &c);
@@ -203,11 +203,11 @@ int TIFFWriteFloatScanline(TIFF *T, float *src, uint32 r)
     static tdata_t *dst = NULL;
     static tsize_t  len = 0;
 
-    uint32 w;
-    uint16 c;
-    uint16 b;
-    uint16 s;
-    uint16 p;
+    uint32 w = 0;
+    uint16 c = 0;
+    uint16 b = 0;
+    uint16 s = 0;
+    uint16 p = 0;
 
     TIFFGetField(T, TIFFTAG_IMAGEWIDTH,      &w);
     TIFFGetField(T, TIFFTAG_SAMPLESPERPIXEL, &c);
