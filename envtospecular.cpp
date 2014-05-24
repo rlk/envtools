@@ -390,13 +390,27 @@ const double *cubemap_axis[6][3] = {
 };
 
 
+static Vec3d cubemap_face[6][3] = {
+    { Vec3d(0,0,-1), Vec3d(0,-1,0), Vec3d(1,0,0) },// x positif
+    { Vec3d(0,0,1), Vec3d(0,-1,0), Vec3d(-1,0,0) }, // x negatif
+
+    { Vec3d(1,0,0), Vec3d(0,0,1), Vec3d(0,1,0) },  // y positif
+    { Vec3d(1,0,0), Vec3d(0,0,-1),Vec3d(0,-1,0) }, // y negatif
+
+    { Vec3d(1,0,0), Vec3d(0,-1,0), Vec3d(0,0,1) },  // z positif
+    { Vec3d(-1,0,0), Vec3d(0,-1,0),Vec3d(0,0,-1) } // z negatif
+};
+
 class Image
 {
 public:
     float* _images[6];
     std::string _name;
+    uint16 _samplePerPixel;
+    uint16 _bitsPerPixel;
+    uint32 _width, _height;
 
-    void loadEnvFace(TIFF* tif, int face, uint32 width, uint32 height, uint16 samplePerPixel, uint16 bitsPerPixel);
+    void loadEnvFace(TIFF* tif, int face);
     bool loadCubemap(const std::string& name) {
 
         TIFF *tif;
@@ -404,32 +418,104 @@ public:
         if (!tif)
             return false;
 
-        uint16 bitsPerPixel, samplePerPixel;
-        uint32 width, height;
 
-        TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE,  &bitsPerPixel);
-        TIFFGetField(tif, TIFFTAG_IMAGEWIDTH,     &width);
-        TIFFGetField(tif, TIFFTAG_IMAGELENGTH,    &height);
-        TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samplePerPixel);
+        TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE,  &_bitsPerPixel);
+        TIFFGetField(tif, TIFFTAG_IMAGEWIDTH,     &_width);
+        TIFFGetField(tif, TIFFTAG_IMAGELENGTH,    &_height);
+        TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &_samplePerPixel);
 
         for ( int face = 0; face < 6; ++face)
-            loadEnvFace(tif, face, width, height, samplePerPixel, bitsPerPixel);
+            loadEnvFace(tif, face);
 
         TIFFClose(tif);
 
         return true;
     }
 
-    void sample(const vec3d& direction, vec3f& color ) {
+    void iterateOnFace( int face ) {
+        double xInvFactor = 2.0/double(_width);
+        for ( int j = 0; j < _height; j++ ) {
+            int lineIndex = j*_samplePerPixel*_width;
+            for ( int i = 0; i < _width; i++ ) {
+                int index = lineIndex + i*_samplePerPixel;
+                Vec3d color = Vec3d( _images[face][ index ], _images[face][ index + 1 ], _images[face][ index +2 ] );
+                // generate a vector for each texel
+                Vec3d vecX = cubemap_face[face][0] * (double(i)*xInvFactor - 1.0);
+                Vec3d vecY = cubemap_face[face][1] * (double(j)*xInvFactor - 1.0);
+                Vec3d vecZ = cubemap_face[face][2];
+                Vec3d direction = Vec3d( vecX + vecY + vecZ );
+                direction.normalize();
+
+#if 1
+                Vec3d colorCheck;
+                sample( direction, colorCheck );
+                Vec3d diff = (color - colorCheck);
+                if ( fabs(diff[0]) > 1e-6 || fabs(diff[1]) > 1e-6 || fabs(diff[2]) > 1e-6 ) {
+                    std::cout << "face " << face << " " << i << "x" << j << " color error " << diff[0] << " " << diff[1] << " " << diff[2] << std::endl;
+                    std::cout << "direction " << direction[0] << " " << direction[1] << " " << direction[2]  << std::endl;
+                    return;
+                }
+#endif
+
+            }
+        }
+    }
 
 
 
+// major axis
+// direction     target                              sc     tc    ma
+// ----------    ---------------------------------   ---    ---   ---
+//  +rx          GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT   -rz    -ry   rx
+//  -rx          GL_TEXTURE_CUBE_MAP_NEGATIVE_X_EXT   +rz    -ry   rx
+//  +ry          GL_TEXTURE_CUBE_MAP_POSITIVE_Y_EXT   +rx    +rz   ry
+//  -ry          GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_EXT   +rx    -rz   ry
+//  +rz          GL_TEXTURE_CUBE_MAP_POSITIVE_Z_EXT   +rx    -ry   rz
+//  -rz          GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_EXT   -rx    -ry   rz
+// s   =   ( sc/|ma| + 1 ) / 2
+// t   =   ( tc/|ma| + 1 ) / 2
+
+    void sample(const Vec3d& direction, Vec3d& color ) {
+
+
+        int bestAxis = 0;
+        if ( fabs(direction[1]) > fabs(direction[0]) ) {
+            bestAxis = 1;
+            if ( fabs(direction[2]) > fabs(direction[1]) )
+                bestAxis = 2;
+        } else if ( fabs(direction[2]) > fabs(direction[0]) )
+            bestAxis = 2;
+
+        // select the index of cubemap face
+        int index = bestAxis*2 + ( direction[bestAxis] > 0 ? 0 : 1 );
+        double bestAxisValue = direction[bestAxis];
+        double denom = fabs( bestAxisValue );
+        double maInv = 1.0/denom;
+
+        double sc = cubemap_face[index][0] * direction;
+        double tc = cubemap_face[index][1] * direction;
+        double ppx = (sc * maInv + 1.0) * 0.5 * _width; // width == height
+        double ppy = (tc * maInv + 1.0) * 0.5 * _width; // width == height
+
+        int px = int( floor( ppx +0.5 ) ); // center pixel
+        int py = int( floor( ppy +0.5 ) ); // center pixel
+
+        //std::cout << " px " << px << " py " << py << std::endl;
+
+        int indexPixel = ( py * _width + px ) * _samplePerPixel;
+        float r = _images[ index ][ indexPixel ];
+        float g = _images[ index ][ indexPixel + 1 ];
+        float b = _images[ index ][ indexPixel + 2 ];
+        color[0] = r;
+        color[1] = g;
+        color[2] = b;
+        //std::cout << "face " << index << " color " << r << " " << g << " " << b << std::endl;
     }
 
 };
 
 
-void Image::loadEnvFace(TIFF* tif, int face, uint32 width, uint32 height, uint16 samplePerPixel, uint16 bitsPerPixel)
+void Image::loadEnvFace(TIFF* tif, int face)
 {
     if ( ! TIFFSetDirectory(tif, face) )
         return;
@@ -443,12 +529,14 @@ void Image::loadEnvFace(TIFF* tif, int face, uint32 width, uint32 height, uint16
     TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &c);
     TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE,   &b);
 
-    if (! (w == width && h == height && b == bitsPerPixel && c == samplePerPixel))
+    if (! (w == _width && h == _height && b == _bitsPerPixel && c == _samplePerPixel)) {
+        std::cerr << "can't read face " << face << std::endl;
         return;
+    }
 
     std::cout << "reading face " << face << " " << w << " x " << h << " x " << c << std::endl;
 
-    _images[face] = new float[width*height*samplePerPixel];
+    _images[face] = new float[_width*_height*_samplePerPixel];
 
     /* Allocate a scanline buffer. */
     std::vector<float> s;
@@ -457,15 +545,15 @@ void Image::loadEnvFace(TIFF* tif, int face, uint32 width, uint32 height, uint16
     uint16 k;
     /* Iterate over all pixels of the current cube face. */
 
-    for (int i = 0; i < height; ++i) {
+    for (int i = 0; i < _height; ++i) {
 
         if (TIFFReadScanline(tif, &s.front(), i, 0) == 1) {
 
-            for (int j = 0; j < width; ++j) {
+            for (int j = 0; j < _width; ++j) {
 
-                for (int k =0; k < samplePerPixel; k++) {
+                for (int k =0; k < _samplePerPixel; k++) {
                     float p = s[ j * c + k ];
-                    _images[face][i*width + j + k ] = p;
+                    _images[face][(i*_width + j)*_samplePerPixel + k ] = p;
                 }
             }
         }
@@ -490,6 +578,11 @@ int main(int argc, char *argv[])
 
     std::string in = std::string( argv[1] );
     image.loadCubemap(in);
+
+    //Vec3d color;
+    //image.sample( Vec3d(1,0,0), color);
+
+    image.iterateOnFace(0);
 
     return 0;
 }
