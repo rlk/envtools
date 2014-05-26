@@ -18,376 +18,24 @@
 /* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER        */
 /* DEALINGS IN THE SOFTWARE.                                                  */
 
+
 #include <string>
 #include <iostream>
 #include <vector>
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <algorithm>
+#include <getopt.h>
+
+typedef unsigned int uint;
 
 #include <tiffio.h>
 
 #include "gray.h"
 #include "sRGB.h"
 
-#define PI  3.1415927f
-
-
-class Vec3f
-{
-    public:
-
-        /** Data type of vector components.*/
-        typedef float value_type;
-
-        /** Number of vector components. */
-        enum { num_components = 3 };
-
-        value_type _v[3];
-
-        /** Constructor that sets all components of the vector to zero */
-        Vec3f() { _v[0]=0.0f; _v[1]=0.0f; _v[2]=0.0f;}
-        Vec3f(value_type x,value_type y,value_type z) { _v[0]=x; _v[1]=y; _v[2]=z; }
-
-        inline bool operator == (const Vec3f& v) const { return _v[0]==v._v[0] && _v[1]==v._v[1] && _v[2]==v._v[2]; }
-
-        inline bool operator != (const Vec3f& v) const { return _v[0]!=v._v[0] || _v[1]!=v._v[1] || _v[2]!=v._v[2]; }
-
-        inline bool operator <  (const Vec3f& v) const
-        {
-            if (_v[0]<v._v[0]) return true;
-            else if (_v[0]>v._v[0]) return false;
-            else if (_v[1]<v._v[1]) return true;
-            else if (_v[1]>v._v[1]) return false;
-            else return (_v[2]<v._v[2]);
-        }
-
-        inline value_type* ptr() { return _v; }
-        inline const value_type* ptr() const { return _v; }
-
-        inline void set( value_type x, value_type y, value_type z)
-        {
-            _v[0]=x; _v[1]=y; _v[2]=z;
-        }
-
-        inline void set( const Vec3f& rhs)
-        {
-            _v[0]=rhs._v[0]; _v[1]=rhs._v[1]; _v[2]=rhs._v[2];
-        }
-
-        inline value_type& operator [] (int i) { return _v[i]; }
-        inline value_type operator [] (int i) const { return _v[i]; }
-
-        inline value_type& x() { return _v[0]; }
-        inline value_type& y() { return _v[1]; }
-        inline value_type& z() { return _v[2]; }
-
-        inline value_type x() const { return _v[0]; }
-        inline value_type y() const { return _v[1]; }
-        inline value_type z() const { return _v[2]; }
-
-        /** Dot product. */
-        inline value_type operator * (const Vec3f& rhs) const
-        {
-            return _v[0]*rhs._v[0]+_v[1]*rhs._v[1]+_v[2]*rhs._v[2];
-        }
-
-        /** Cross product. */
-        inline const Vec3f operator ^ (const Vec3f& rhs) const
-        {
-            return Vec3f(_v[1]*rhs._v[2]-_v[2]*rhs._v[1],
-                         _v[2]*rhs._v[0]-_v[0]*rhs._v[2] ,
-                         _v[0]*rhs._v[1]-_v[1]*rhs._v[0]);
-        }
-
-        /** Multiply by scalar. */
-        inline const Vec3f operator * (value_type rhs) const
-        {
-            return Vec3f(_v[0]*rhs, _v[1]*rhs, _v[2]*rhs);
-        }
-
-        /** Unary multiply by scalar. */
-        inline Vec3f& operator *= (value_type rhs)
-        {
-            _v[0]*=rhs;
-            _v[1]*=rhs;
-            _v[2]*=rhs;
-            return *this;
-        }
-
-        /** Divide by scalar. */
-        inline const Vec3f operator / (value_type rhs) const
-        {
-            return Vec3f(_v[0]/rhs, _v[1]/rhs, _v[2]/rhs);
-        }
-
-        /** Unary divide by scalar. */
-        inline Vec3f& operator /= (value_type rhs)
-        {
-            _v[0]/=rhs;
-            _v[1]/=rhs;
-            _v[2]/=rhs;
-            return *this;
-        }
-
-        /** Binary vector add. */
-        inline const Vec3f operator + (const Vec3f& rhs) const
-        {
-            return Vec3f(_v[0]+rhs._v[0], _v[1]+rhs._v[1], _v[2]+rhs._v[2]);
-        }
-
-        /** Unary vector add. Slightly more efficient because no temporary
-          * intermediate object.
-        */
-        inline Vec3f& operator += (const Vec3f& rhs)
-        {
-            _v[0] += rhs._v[0];
-            _v[1] += rhs._v[1];
-            _v[2] += rhs._v[2];
-            return *this;
-        }
-
-        /** Binary vector subtract. */
-        inline const Vec3f operator - (const Vec3f& rhs) const
-        {
-            return Vec3f(_v[0]-rhs._v[0], _v[1]-rhs._v[1], _v[2]-rhs._v[2]);
-        }
-
-        /** Unary vector subtract. */
-        inline Vec3f& operator -= (const Vec3f& rhs)
-        {
-            _v[0]-=rhs._v[0];
-            _v[1]-=rhs._v[1];
-            _v[2]-=rhs._v[2];
-            return *this;
-        }
-
-        /** Negation operator. Returns the negative of the Vec3f. */
-        inline const Vec3f operator - () const
-        {
-            return Vec3f (-_v[0], -_v[1], -_v[2]);
-        }
-
-        /** Length of the vector = sqrt( vec . vec ) */
-        inline value_type length() const
-        {
-            return sqrtf( _v[0]*_v[0] + _v[1]*_v[1] + _v[2]*_v[2] );
-        }
-
-        /** Length squared of the vector = vec . vec */
-        inline value_type length2() const
-        {
-            return _v[0]*_v[0] + _v[1]*_v[1] + _v[2]*_v[2];
-        }
-
-        /** Normalize the vector so that it has length unity.
-          * Returns the previous length of the vector.
-        */
-        inline value_type normalize()
-        {
-            value_type norm = Vec3f::length();
-            if (norm>0.0)
-            {
-                value_type inv = 1.0f/norm;
-                _v[0] *= inv;
-                _v[1] *= inv;
-                _v[2] *= inv;
-            }
-            return( norm );
-        }
-
-};    // end of class Vec3f
-
-class Vec3d
-{
-    public:
-
-        /** Data type of vector components.*/
-        typedef double value_type;
-
-        /** Number of vector components. */
-        enum { num_components = 3 };
-
-        value_type _v[3];
-
-        /** Constructor that sets all components of the vector to zero */
-        Vec3d() { _v[0]=0.0; _v[1]=0.0; _v[2]=0.0;}
-
-        inline operator Vec3f() const { return Vec3f(static_cast<float>(_v[0]),static_cast<float>(_v[1]),static_cast<float>(_v[2]));}
-
-        Vec3d(value_type x,value_type y,value_type z) { _v[0]=x; _v[1]=y; _v[2]=z; }
-
-        inline bool operator == (const Vec3d& v) const { return _v[0]==v._v[0] && _v[1]==v._v[1] && _v[2]==v._v[2]; }
-
-        inline bool operator != (const Vec3d& v) const { return _v[0]!=v._v[0] || _v[1]!=v._v[1] || _v[2]!=v._v[2]; }
-
-        inline bool operator <  (const Vec3d& v) const
-        {
-            if (_v[0]<v._v[0]) return true;
-            else if (_v[0]>v._v[0]) return false;
-            else if (_v[1]<v._v[1]) return true;
-            else if (_v[1]>v._v[1]) return false;
-            else return (_v[2]<v._v[2]);
-        }
-
-        inline value_type* ptr() { return _v; }
-        inline const value_type* ptr() const { return _v; }
-
-        inline void set( value_type x, value_type y, value_type z)
-        {
-            _v[0]=x; _v[1]=y; _v[2]=z;
-        }
-
-        inline void set( const Vec3d& rhs)
-        {
-            _v[0]=rhs._v[0]; _v[1]=rhs._v[1]; _v[2]=rhs._v[2];
-        }
-
-        inline value_type& operator [] (int i) { return _v[i]; }
-        inline value_type operator [] (int i) const { return _v[i]; }
-
-        inline value_type& x() { return _v[0]; }
-        inline value_type& y() { return _v[1]; }
-        inline value_type& z() { return _v[2]; }
-
-        inline value_type x() const { return _v[0]; }
-        inline value_type y() const { return _v[1]; }
-        inline value_type z() const { return _v[2]; }
-
-
-        /** Dot product. */
-        inline value_type operator * (const Vec3d& rhs) const
-        {
-            return _v[0]*rhs._v[0]+_v[1]*rhs._v[1]+_v[2]*rhs._v[2];
-        }
-
-        /** Cross product. */
-        inline const Vec3d operator ^ (const Vec3d& rhs) const
-        {
-            return Vec3d(_v[1]*rhs._v[2]-_v[2]*rhs._v[1],
-                         _v[2]*rhs._v[0]-_v[0]*rhs._v[2] ,
-                         _v[0]*rhs._v[1]-_v[1]*rhs._v[0]);
-        }
-
-        /** Multiply by scalar. */
-        inline const Vec3d operator * (value_type rhs) const
-        {
-            return Vec3d(_v[0]*rhs, _v[1]*rhs, _v[2]*rhs);
-        }
-
-        /** Unary multiply by scalar. */
-        inline Vec3d& operator *= (value_type rhs)
-        {
-            _v[0]*=rhs;
-            _v[1]*=rhs;
-            _v[2]*=rhs;
-            return *this;
-        }
-
-        /** Divide by scalar. */
-        inline const Vec3d operator / (value_type rhs) const
-        {
-            return Vec3d(_v[0]/rhs, _v[1]/rhs, _v[2]/rhs);
-        }
-
-        /** Unary divide by scalar. */
-        inline Vec3d& operator /= (value_type rhs)
-        {
-            _v[0]/=rhs;
-            _v[1]/=rhs;
-            _v[2]/=rhs;
-            return *this;
-        }
-
-        /** Binary vector add. */
-        inline const Vec3d operator + (const Vec3d& rhs) const
-        {
-            return Vec3d(_v[0]+rhs._v[0], _v[1]+rhs._v[1], _v[2]+rhs._v[2]);
-        }
-
-        /** Unary vector add. Slightly more efficient because no temporary
-          * intermediate object.
-        */
-        inline Vec3d& operator += (const Vec3d& rhs)
-        {
-            _v[0] += rhs._v[0];
-            _v[1] += rhs._v[1];
-            _v[2] += rhs._v[2];
-            return *this;
-        }
-
-        /** Binary vector subtract. */
-        inline const Vec3d operator - (const Vec3d& rhs) const
-        {
-            return Vec3d(_v[0]-rhs._v[0], _v[1]-rhs._v[1], _v[2]-rhs._v[2]);
-        }
-
-        /** Unary vector subtract. */
-        inline Vec3d& operator -= (const Vec3d& rhs)
-        {
-            _v[0]-=rhs._v[0];
-            _v[1]-=rhs._v[1];
-            _v[2]-=rhs._v[2];
-            return *this;
-        }
-
-        /** Negation operator. Returns the negative of the Vec3d. */
-        inline const Vec3d operator - () const
-        {
-            return Vec3d (-_v[0], -_v[1], -_v[2]);
-        }
-
-        /** Length of the vector = sqrt( vec . vec ) */
-        inline value_type length() const
-        {
-            return sqrt( _v[0]*_v[0] + _v[1]*_v[1] + _v[2]*_v[2] );
-        }
-
-        /** Length squared of the vector = vec . vec */
-        inline value_type length2() const
-        {
-            return _v[0]*_v[0] + _v[1]*_v[1] + _v[2]*_v[2];
-        }
-
-        /** Normalize the vector so that it has length unity.
-          * Returns the previous length of the vector.
-          * If the vector is zero length, it is left unchanged and zero is returned.
-        */
-        inline value_type normalize()
-        {
-            value_type norm = Vec3d::length();
-            if (norm>0.0)
-            {
-                value_type inv = 1.0/norm;
-                _v[0] *= inv;
-                _v[1] *= inv;
-                _v[2] *= inv;
-            }
-            return( norm );
-        }
-
-};    // end of class Vec3d
-
-
-/* This array defines the X, Y, and Z axes of each of the six cube map faces, */
-/* which determine the orientation of each face and the mapping between 2D    */
-/* image space and 3D cube map space.                                         */
-
-static const double nx[3] = { -1.0,  0.0,  0.0 };
-static const double px[3] = {  1.0,  0.0,  0.0 };
-static const double ny[3] = {  0.0, -1.0,  0.0 };
-static const double py[3] = {  0.0,  1.0,  0.0 };
-static const double nz[3] = {  0.0,  0.0, -1.0 };
-static const double pz[3] = {  0.0,  0.0,  1.0 };
-
-const double *cubemap_axis[6][3] = {
-    { pz, py, nx },
-    { nz, py, px },
-    { nx, nz, ny },
-    { nx, pz, py },
-    { nx, py, nz },
-    { px, py, pz },
-};
+#include "Math"
 
 
 static Vec3d cubemap_face[6][3] = {
@@ -401,14 +49,66 @@ static Vec3d cubemap_face[6][3] = {
     { Vec3d(-1,0,0), Vec3d(0,-1,0),Vec3d(0,0,-1) } // z negatif
 };
 
+// struct CubemapLevel {
+//     uint16 _width;
+//     uint16 _height;
+//     float* _outputImages[6];
+
+// };
+
+
 class Image
 {
 public:
     float* _images[6];
+    float* _outputImages[6];
+
     std::string _name;
     uint16 _samplePerPixel;
     uint16 _bitsPerPixel;
     uint32 _width, _height;
+
+    float _roughness;
+
+    void write( const std::string& filename ) {
+
+        TIFF* file = TIFFOpen(filename.c_str(), "w");
+
+        if (!file)
+            return;
+
+        for ( int face = 0; face < 6; face++) {
+            TIFFSetField(file, TIFFTAG_IMAGEWIDTH,      _width);
+            TIFFSetField(file, TIFFTAG_IMAGELENGTH,     _height);
+            TIFFSetField(file, TIFFTAG_SAMPLESPERPIXEL, _samplePerPixel);
+            TIFFSetField(file, TIFFTAG_BITSPERSAMPLE,   32);
+            TIFFSetField(file, TIFFTAG_ORIENTATION,     ORIENTATION_TOPLEFT);
+            TIFFSetField(file, TIFFTAG_PLANARCONFIG,    PLANARCONFIG_CONTIG);
+            TIFFSetField(file, TIFFTAG_SAMPLEFORMAT,    SAMPLEFORMAT_IEEEFP);
+
+            if (_samplePerPixel == 1)
+            {
+                TIFFSetField(file, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_MINISBLACK);
+                TIFFSetField(file, TIFFTAG_ICCPROFILE, sizeof (grayicc), grayicc);
+            }
+            else
+            {
+                TIFFSetField(file, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_RGB);
+                TIFFSetField(file, TIFFTAG_ICCPROFILE, sizeof (sRGBicc), sRGBicc);
+            }
+
+            size_t size = (size_t) TIFFScanlineSize( file );
+
+            for (int i = 0; i < _height; ++i) {
+                uint8* start = (uint8*)_outputImages[face];
+                TIFFWriteScanline(file, (uint8 *) start + size * i, i, 0);
+            }
+
+            TIFFWriteDirectory(file);
+        }
+
+        TIFFClose(file);
+    }
 
     void loadEnvFace(TIFF* tif, int face);
     bool loadCubemap(const std::string& name) {
@@ -424,32 +124,86 @@ public:
         TIFFGetField(tif, TIFFTAG_IMAGELENGTH,    &_height);
         TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &_samplePerPixel);
 
-        for ( int face = 0; face < 6; ++face)
+        for ( int face = 0; face < 6; ++face) {
+            _outputImages[face] = new float[_width*_height*_samplePerPixel];
             loadEnvFace(tif, face);
+        }
 
         TIFFClose(tif);
 
         return true;
     }
 
+    void computeSpecularIrradiance( float roughness, const std::string& output ) {
+        _roughness = roughness;
+        iterateOnFace(0);
+        iterateOnFace(1);
+        iterateOnFace(2);
+        iterateOnFace(3);
+        iterateOnFace(4);
+        iterateOnFace(5);
+
+        write( output );
+    }
+
+    Vec3d prefilterEnvMap( float roughness, Vec3d R ) {
+        Vec3d N = R;
+        Vec3d V = R;
+        Vec3d prefilteredColor = Vec3d(0,0,0);
+        const uint NumSamples = 1024;
+        double totalWeight = 0;
+
+        for( uint i = 0; i < NumSamples; i++ ) {
+            Vec2d Xi = hammersley( i, NumSamples );
+            Vec3d H = importanceSampleGGX( Xi, roughness, N );
+            Vec3d L =  H * dot( V, H ) * 2.0 - V;
+            double NoL = std::max( 1.0, dot( N, L ) );
+
+            if( NoL > 0 ) {
+                Vec3d color;
+                sample( L, color );
+                prefilteredColor += color * NoL;
+                totalWeight += NoL;
+            }
+        }
+        return prefilteredColor / totalWeight;
+    }
+
+
     void iterateOnFace( int face ) {
+
         double xInvFactor = 2.0/double(_width);
-        for ( int j = 0; j < _height; j++ ) {
+
+        #pragma omp parallel num_threads(12)
+        #pragma omp for
+
+        for ( uint32 j = 0; j < _height; j++ ) {
             int lineIndex = j*_samplePerPixel*_width;
-            for ( int i = 0; i < _width; i++ ) {
+
+            for ( uint32 i = 0; i < _width; i++ ) {
                 int index = lineIndex + i*_samplePerPixel;
-                Vec3d color = Vec3d( _images[face][ index ], _images[face][ index + 1 ], _images[face][ index +2 ] );
+                //Vec3d color = Vec3d( _images[face][ index ], _images[face][ index + 1 ], _images[face][ index +2 ] );
+
+                // center ray on texel center
                 // generate a vector for each texel
-                Vec3d vecX = cubemap_face[face][0] * (double(i)*xInvFactor - 1.0);
-                Vec3d vecY = cubemap_face[face][1] * (double(j)*xInvFactor - 1.0);
+                double texelX = double(i) + 0.5;
+                double texelY = double(j) + 0.5;
+                Vec3d vecX = cubemap_face[face][0] * (texelX*xInvFactor - 1.0);
+                Vec3d vecY = cubemap_face[face][1] * (texelY*xInvFactor - 1.0);
                 Vec3d vecZ = cubemap_face[face][2];
                 Vec3d direction = Vec3d( vecX + vecY + vecZ );
                 direction.normalize();
 
-#if 1
-                Vec3d colorCheck;
-                sample( direction, colorCheck );
-                Vec3d diff = (color - colorCheck);
+                Vec3d resultColor = prefilterEnvMap( _roughness, direction );
+
+                _outputImages[face][ index     ] = resultColor[0];
+                _outputImages[face][ index + 1 ] = resultColor[1];
+                _outputImages[face][ index + 2 ] = resultColor[2];
+
+                //std::cout << "face " << face << " processing " << i << "x" << j << std::endl;
+#if 0
+                //sample( direction, resultColor );
+                Vec3d diff = (color - resultColor);
                 if ( fabs(diff[0]) > 1e-6 || fabs(diff[1]) > 1e-6 || fabs(diff[2]) > 1e-6 ) {
                     std::cout << "face " << face << " " << i << "x" << j << " color error " << diff[0] << " " << diff[1] << " " << diff[2] << std::endl;
                     std::cout << "direction " << direction[0] << " " << direction[1] << " " << direction[2]  << std::endl;
@@ -497,8 +251,11 @@ public:
         double ppx = (sc * maInv + 1.0) * 0.5 * _width; // width == height
         double ppy = (tc * maInv + 1.0) * 0.5 * _width; // width == height
 
-        int px = int( floor( ppx +0.5 ) ); // center pixel
-        int py = int( floor( ppy +0.5 ) ); // center pixel
+        //int px = int( floor( ppx +0.5 ) ); // center pixel
+        //int py = int( floor( ppy +0.5 ) ); // center pixel
+
+        int px = int( floor( ppx ) ); // center pixel
+        int py = int( floor( ppy ) ); // center pixel
 
         //std::cout << " px " << px << " py " << py << std::endl;
 
@@ -534,7 +291,7 @@ void Image::loadEnvFace(TIFF* tif, int face)
         return;
     }
 
-    std::cout << "reading face " << face << " " << w << " x " << h << " x " << c << std::endl;
+    // std::cout << "reading face " << face << " " << w << " x " << h << " x " << c << std::endl;
 
     _images[face] = new float[_width*_height*_samplePerPixel];
 
@@ -542,14 +299,12 @@ void Image::loadEnvFace(TIFF* tif, int face)
     std::vector<float> s;
     s.resize(TIFFScanlineSize(tif));
 
-    uint16 k;
     /* Iterate over all pixels of the current cube face. */
-
-    for (int i = 0; i < _height; ++i) {
+    for (uint32 i = 0; i < _height; ++i) {
 
         if (TIFFReadScanline(tif, &s.front(), i, 0) == 1) {
 
-            for (int j = 0; j < _width; ++j) {
+            for (uint32 j = 0; j < _width; ++j) {
 
                 for (int k =0; k < _samplePerPixel; k++) {
                     float p = s[ j * c + k ];
@@ -560,11 +315,12 @@ void Image::loadEnvFace(TIFF* tif, int face)
     }
 }
 
+
 /*----------------------------------------------------------------------------*/
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " in.tif out.tif" << std::endl;
+    std::cerr << "Usage: " << name << " [-r r] in.tif out.tif" << std::endl;
     return 1;
 }
 
@@ -572,17 +328,29 @@ int main(int argc, char *argv[])
 {
 
     Image image;
+    double roughness = 0.0;
+    int c;
 
-    if ( argc < 2 )
-        return usage(argv[0]);
+    while ((c = getopt(argc, argv, "r:")) != -1)
+        switch (c)
+        {
+        case 'r': roughness = atof(optarg);       break;
 
-    std::string in = std::string( argv[1] );
-    image.loadCubemap(in);
+        default: return usage(argv[0]);
+        }
 
-    //Vec3d color;
-    //image.sample( Vec3d(1,0,0), color);
+    std::string input, output;
+    if ( optind < argc-1 ) {
+        input = std::string( argv[optind] );
+        output = std::string( argv[optind+1] );
+    } else {
+        return usage( argv[0] );
+    }
 
-    image.iterateOnFace(0);
+    std::cout << "compute with roughness " << roughness << std::endl;
+
+    image.loadCubemap(input);
+    image.computeSpecularIrradiance( roughness, output );
 
     return 0;
 }
