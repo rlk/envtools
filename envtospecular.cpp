@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <getopt.h>
+#include <omp.h>
 
 typedef unsigned int uint;
 
@@ -49,26 +50,36 @@ static Vec3d cubemap_face[6][3] = {
     { Vec3d(-1,0,0), Vec3d(0,-1,0),Vec3d(0,0,-1) } // z negatif
 };
 
-// struct CubemapLevel {
-//     uint16 _width;
-//     uint16 _height;
-//     float* _outputImages[6];
-
-// };
-
-
-class Image
-{
-public:
+struct CubemapLevel {
+    uint16 _width;
+    uint16 _height;
     float* _images[6];
-    float* _outputImages[6];
-
-    std::string _name;
     uint16 _samplePerPixel;
     uint16 _bitsPerPixel;
-    uint32 _width, _height;
 
-    float _roughness;
+    CubemapLevel() {
+        for ( int i = 0; i < 6; i++ ) {
+            if ( _images[i] )
+                _images[i] = 0;
+        }
+    }
+    ~CubemapLevel() {
+        for ( int i = 0; i < 6; i++ ) {
+            if ( _images[i] )
+                delete [] _images[i];
+        }
+    }
+
+    void init( uint16 width, uint16 height, uint16 sample, uint16 bits) {
+        _width = width;
+        _height = height;
+        _samplePerPixel = sample;
+        _bitsPerPixel = bits;
+
+        for ( int i = 0; i < 6; i++ ) {
+            _images[i] = new float[width*height*sample];
+        }
+    }
 
     void write( const std::string& filename ) {
 
@@ -100,7 +111,7 @@ public:
             size_t size = (size_t) TIFFScanlineSize( file );
 
             for (int i = 0; i < _height; ++i) {
-                uint8* start = (uint8*)_outputImages[face];
+                uint8* start = (uint8*)_images[face];
                 TIFFWriteScanline(file, (uint8 *) start + size * i, i, 0);
             }
 
@@ -110,43 +121,51 @@ public:
         TIFFClose(file);
     }
 
-    void loadEnvFace(TIFF* tif, int face);
-    bool loadCubemap(const std::string& name) {
 
-        TIFF *tif;
-        tif = TIFFOpen(name.c_str(), "r");
-        if (!tif)
-            return false;
+    void iterateOnFace( int face, float roughness, const CubemapLevel& cubemap ) {
 
+        double xInvFactor = 2.0/double(_width);
 
-        TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE,  &_bitsPerPixel);
-        TIFFGetField(tif, TIFFTAG_IMAGEWIDTH,     &_width);
-        TIFFGetField(tif, TIFFTAG_IMAGELENGTH,    &_height);
-        TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &_samplePerPixel);
+        #pragma omp for
+        for ( uint32 j = 0; j < _height; j++ ) {
+            int lineIndex = j*_samplePerPixel*_width;
 
-        for ( int face = 0; face < 6; ++face) {
-            _outputImages[face] = new float[_width*_height*_samplePerPixel];
-            loadEnvFace(tif, face);
+            for ( uint32 i = 0; i < _width; i++ ) {
+                int index = lineIndex + i*_samplePerPixel;
+                //Vec3d color = Vec3d( _images[face][ index ], _images[face][ index + 1 ], _images[face][ index +2 ] );
+
+                // center ray on texel center
+                // generate a vector for each texel
+                double texelX = double(i) + 0.5;
+                double texelY = double(j) + 0.5;
+                Vec3d vecX = cubemap_face[face][0] * (texelX*xInvFactor - 1.0);
+                Vec3d vecY = cubemap_face[face][1] * (texelY*xInvFactor - 1.0);
+                Vec3d vecZ = cubemap_face[face][2];
+                Vec3d direction = Vec3d( vecX + vecY + vecZ );
+                direction.normalize();
+
+                Vec3d resultColor = cubemap.prefilterEnvMap( roughness, direction );
+
+                _images[face][ index     ] = resultColor[0];
+                _images[face][ index + 1 ] = resultColor[1];
+                _images[face][ index + 2 ] = resultColor[2];
+
+                //std::cout << "face " << face << " processing " << i << "x" << j << std::endl;
+#if 0
+                //sample( direction, resultColor );
+                Vec3d diff = (color - resultColor);
+                if ( fabs(diff[0]) > 1e-6 || fabs(diff[1]) > 1e-6 || fabs(diff[2]) > 1e-6 ) {
+                    std::cout << "face " << face << " " << i << "x" << j << " color error " << diff[0] << " " << diff[1] << " " << diff[2] << std::endl;
+                    std::cout << "direction " << direction[0] << " " << direction[1] << " " << direction[2]  << std::endl;
+                    return;
+                }
+#endif
+
+            }
         }
-
-        TIFFClose(tif);
-
-        return true;
     }
 
-    void computeSpecularIrradiance( float roughness, const std::string& output ) {
-        _roughness = roughness;
-        iterateOnFace(0);
-        iterateOnFace(1);
-        iterateOnFace(2);
-        iterateOnFace(3);
-        iterateOnFace(4);
-        iterateOnFace(5);
-
-        write( output );
-    }
-
-    Vec3d prefilterEnvMap( float roughness, Vec3d R ) {
+    Vec3d prefilterEnvMap( float roughness, const Vec3d& R ) const {
         Vec3d N = R;
         Vec3d V = R;
         Vec3d prefilteredColor = Vec3d(0,0,0);
@@ -169,54 +188,6 @@ public:
         return prefilteredColor / totalWeight;
     }
 
-
-    void iterateOnFace( int face ) {
-
-        double xInvFactor = 2.0/double(_width);
-
-        #pragma omp parallel num_threads(12)
-        #pragma omp for
-
-        for ( uint32 j = 0; j < _height; j++ ) {
-            int lineIndex = j*_samplePerPixel*_width;
-
-            for ( uint32 i = 0; i < _width; i++ ) {
-                int index = lineIndex + i*_samplePerPixel;
-                //Vec3d color = Vec3d( _images[face][ index ], _images[face][ index + 1 ], _images[face][ index +2 ] );
-
-                // center ray on texel center
-                // generate a vector for each texel
-                double texelX = double(i) + 0.5;
-                double texelY = double(j) + 0.5;
-                Vec3d vecX = cubemap_face[face][0] * (texelX*xInvFactor - 1.0);
-                Vec3d vecY = cubemap_face[face][1] * (texelY*xInvFactor - 1.0);
-                Vec3d vecZ = cubemap_face[face][2];
-                Vec3d direction = Vec3d( vecX + vecY + vecZ );
-                direction.normalize();
-
-                Vec3d resultColor = prefilterEnvMap( _roughness, direction );
-
-                _outputImages[face][ index     ] = resultColor[0];
-                _outputImages[face][ index + 1 ] = resultColor[1];
-                _outputImages[face][ index + 2 ] = resultColor[2];
-
-                //std::cout << "face " << face << " processing " << i << "x" << j << std::endl;
-#if 0
-                //sample( direction, resultColor );
-                Vec3d diff = (color - resultColor);
-                if ( fabs(diff[0]) > 1e-6 || fabs(diff[1]) > 1e-6 || fabs(diff[2]) > 1e-6 ) {
-                    std::cout << "face " << face << " " << i << "x" << j << " color error " << diff[0] << " " << diff[1] << " " << diff[2] << std::endl;
-                    std::cout << "direction " << direction[0] << " " << direction[1] << " " << direction[2]  << std::endl;
-                    return;
-                }
-#endif
-
-            }
-        }
-    }
-
-
-
 // major axis
 // direction     target                              sc     tc    ma
 // ----------    ---------------------------------   ---    ---   ---
@@ -229,7 +200,7 @@ public:
 // s   =   ( sc/|ma| + 1 ) / 2
 // t   =   ( tc/|ma| + 1 ) / 2
 
-    void sample(const Vec3d& direction, Vec3d& color ) {
+    void sample(const Vec3d& direction, Vec3d& color ) const {
 
 
         int bestAxis = 0;
@@ -269,10 +240,56 @@ public:
         //std::cout << "face " << index << " color " << r << " " << g << " " << b << std::endl;
     }
 
+
+    void loadEnvFace(TIFF* tif, int face);
+
+    bool loadCubemap(const std::string& name) {
+
+        TIFF *tif;
+        tif = TIFFOpen(name.c_str(), "r");
+        if (!tif)
+            return false;
+
+
+        TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE,  &_bitsPerPixel);
+        TIFFGetField(tif, TIFFTAG_IMAGEWIDTH,     &_width);
+        TIFFGetField(tif, TIFFTAG_IMAGELENGTH,    &_height);
+        TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &_samplePerPixel);
+
+        std::cout << "reading cubemap environment  6 x " << _width << " x " << _height << " x " << _samplePerPixel << " - " << _bitsPerPixel << " bits" << std::endl;
+        for ( int face = 0; face < 6; ++face) {
+            loadEnvFace(tif, face);
+        }
+
+        TIFFClose(tif);
+
+        return true;
+    }
+
+    void computeSpecularAtLevel( float roughness, const CubemapLevel& cubemap) {
+        iterateOnFace(0, roughness, cubemap);
+        iterateOnFace(1, roughness, cubemap);
+        iterateOnFace(2, roughness, cubemap);
+        iterateOnFace(3, roughness, cubemap);
+        iterateOnFace(4, roughness, cubemap);
+        iterateOnFace(5, roughness, cubemap);
+    }
+
+    void computeSpecularIrradiance( float roughness, const std::string& output ) {
+
+        CubemapLevel cubemap;
+        cubemap.init(_width, _height,_samplePerPixel,_bitsPerPixel);
+
+        #pragma omp parallel
+
+        cubemap.computeSpecularAtLevel( roughness, *this);
+        cubemap.write( output );
+    }
+
 };
 
 
-void Image::loadEnvFace(TIFF* tif, int face)
+void CubemapLevel::loadEnvFace(TIFF* tif, int face)
 {
     if ( ! TIFFSetDirectory(tif, face) )
         return;
@@ -290,8 +307,6 @@ void Image::loadEnvFace(TIFF* tif, int face)
         std::cerr << "can't read face " << face << std::endl;
         return;
     }
-
-    // std::cout << "reading face " << face << " " << w << " x " << h << " x " << c << std::endl;
 
     _images[face] = new float[_width*_height*_samplePerPixel];
 
@@ -327,7 +342,7 @@ static int usage(const std::string& name)
 int main(int argc, char *argv[])
 {
 
-    Image image;
+    CubemapLevel image;
     double roughness = 0.0;
     int c;
 
