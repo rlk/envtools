@@ -21,13 +21,13 @@
 
 #include <string>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
 #include <getopt.h>
-#include <omp.h>
 
 typedef unsigned int uint;
 
@@ -59,8 +59,7 @@ struct CubemapLevel {
 
     CubemapLevel() {
         for ( int i = 0; i < 6; i++ ) {
-            if ( _images[i] )
-                _images[i] = 0;
+            _images[i] = 0;
         }
     }
     ~CubemapLevel() {
@@ -125,7 +124,7 @@ struct CubemapLevel {
     void iterateOnFace( int face, float roughness, const CubemapLevel& cubemap ) {
 
         double xInvFactor = 2.0/double(_width);
-
+        #pragma omp parallel
         #pragma omp for
         for ( uint32 j = 0; j < _height; j++ ) {
             int lineIndex = j*_samplePerPixel*_width;
@@ -267,6 +266,7 @@ struct CubemapLevel {
     }
 
     void computeSpecularAtLevel( float roughness, const CubemapLevel& cubemap) {
+
         iterateOnFace(0, roughness, cubemap);
         iterateOnFace(1, roughness, cubemap);
         iterateOnFace(2, roughness, cubemap);
@@ -275,15 +275,34 @@ struct CubemapLevel {
         iterateOnFace(5, roughness, cubemap);
     }
 
-    void computeSpecularIrradiance( float roughness, const std::string& output ) {
+    void computeSpecularIrradiance( const std::string& output, int startSize = 0 ) {
 
-        CubemapLevel cubemap;
-        cubemap.init(_width, _height,_samplePerPixel,_bitsPerPixel);
+        int computeStartSize = startSize;
+        if (!computeStartSize)
+            computeStartSize = _width;
 
-        #pragma omp parallel
+        int nbMipmap = log2(computeStartSize);
+        std::cout << nbMipmap << " mipmap levels will be generated from " << computeStartSize << " x " << computeStartSize << std::endl;
 
-        cubemap.computeSpecularAtLevel( roughness, *this);
-        cubemap.write( output );
+        float start = 0.0;
+        float stop = 1.0;
+
+        float step = (stop-start)*1.0/float(nbMipmap);
+
+        for ( int i = 0; i < nbMipmap; i++ ) {
+            CubemapLevel cubemap;
+            float roughness = step * i;
+            uint16 size = pow(2, nbMipmap-i );
+            cubemap.init( size, size, _samplePerPixel, _bitsPerPixel);
+
+            std::stringstream ss;
+            ss << output << "_" << size << "_" << roughness << ".tif";
+
+            std::cout << "compute specular with roughness " << roughness << " 6 x " << size << " x " << size << " to " << ss.str() << std::endl;
+            cubemap.computeSpecularAtLevel( step * i, *this);
+            cubemap.write( ss.str() );
+        }
+
     }
 
 };
@@ -335,7 +354,7 @@ void CubemapLevel::loadEnvFace(TIFF* tif, int face)
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-r r] in.tif out.tif" << std::endl;
+    std::cerr << "Usage: " << name << " [-s size] in.tif out.tif" << std::endl;
     return 1;
 }
 
@@ -343,13 +362,13 @@ int main(int argc, char *argv[])
 {
 
     CubemapLevel image;
-    double roughness = 0.0;
+    int size = 0;
     int c;
 
-    while ((c = getopt(argc, argv, "r:")) != -1)
+    while ((c = getopt(argc, argv, "s:")) != -1)
         switch (c)
         {
-        case 'r': roughness = atof(optarg);       break;
+        case 's': size = atof(optarg);       break;
 
         default: return usage(argv[0]);
         }
@@ -362,10 +381,8 @@ int main(int argc, char *argv[])
         return usage( argv[0] );
     }
 
-    std::cout << "compute with roughness " << roughness << std::endl;
-
     image.loadCubemap(input);
-    image.computeSpecularIrradiance( roughness, output );
+    image.computeSpecularIrradiance( output, size );
 
     return 0;
 }
