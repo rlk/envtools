@@ -383,6 +383,10 @@ struct RougnessNoVLUT {
         return G1_ndl * G1_ndv;
     }
 
+
+    // http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
+    // page 7
+    // this is the integrate function used to build the LUT
     Vec2d integrateBRDF( double roughness, double NoV ) {
 
         Vec3d V;
@@ -426,6 +430,9 @@ struct RougnessNoVLUT {
         return Vec2d( A, B );
     }
 
+
+    // LUT generation main entry point
+    // from http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
     void processRoughnessNoVLut( const std::string& filename) {
 
         double step = 1.0/double(_size);
