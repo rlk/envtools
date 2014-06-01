@@ -24,10 +24,12 @@
 #include <sstream>
 #include <vector>
 #include <cstdlib>
+#include <limits>
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
 #include <getopt.h>
+#include <png.h>
 
 typedef unsigned int uint;
 
@@ -37,6 +39,8 @@ typedef unsigned int uint;
 #include "sRGB.h"
 
 #include "Math"
+
+int writeImage(char* filename, int width, int height, Vec2d *buffer, char* title);
 
 
 static Vec3d cubemap_face[6][3] = {
@@ -175,9 +179,9 @@ struct CubemapLevel {
             Vec2d Xi = hammersley( i, NumSamples );
             Vec3d H = importanceSampleGGX( Xi, roughness, N );
             Vec3d L =  H * dot( V, H ) * 2.0 - V;
-            double NoL = std::max( 1.0, dot( N, L ) );
+            double NoL = saturate( dot( N, L ) );
 
-            if( NoL > 0 ) {
+            if( NoL > 0.0 ) {
                 Vec3d color;
                 sample( L, color );
                 prefilteredColor += color * NoL;
@@ -350,39 +354,250 @@ void CubemapLevel::loadEnvFace(TIFF* tif, int face)
 }
 
 
+
+struct RougnessNoVLUT {
+
+    int _size;
+    Vec2d* _lut;
+    double _maxValue;
+
+    RougnessNoVLUT( int size ) {
+        _size = size;
+        _lut = new Vec2d[size*size];
+        _maxValue = 0.0;
+    }
+
+    // w is either Ln or Vn
+    double G1( double ndw, double k ) {
+        // One generic factor of the geometry function divided by ndw
+        // NB : We should have k > 0
+        return 1.0 / ( ndw*(1.0-k) + k );
+    }
+
+    double G_Smith( double ndl,double ndv,double roughness) {
+        // Schlick with Smith-like choice of k
+        // cf http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf p3
+        double k = roughness * roughness * 0.5;
+        double G1_ndl = G1(ndl,k);
+        double G1_ndv = G1(ndv,k);
+        return G1_ndl * G1_ndv;
+    }
+
+    Vec2d integrateBRDF( double roughness, double NoV ) {
+
+        Vec3d V;
+        V[0] = sqrt( 1.0 - NoV * NoV ); // sin V.y = 0;
+        V[1] = 0.0;
+        V[2] = NoV; // cos
+
+
+        Vec3d N = Vec3d(0,0,1); // dont know where the normal comes from
+        // but if the view vector is generated from NoV then the normal should be fixed
+        // and 0,0,1
+
+        double A = 0.0;
+        double B = 0.0;
+        const uint NumSamples = 1024;
+        const double invSamples = 1.0/NumSamples;
+
+        for( uint i = 0; i < NumSamples; i++ ) {
+
+            Vec2d Xi = hammersley( i, NumSamples );
+            Vec3d H = importanceSampleGGX( Xi, roughness, N );
+            Vec3d L =  H * dot( V, H ) * 2.0 - V;
+
+            double NoL = saturate( L[2] );
+            double NoH = saturate( H[2] );
+            double VoH = saturate( V*H );
+
+            if( NoL > 0.0 ) {
+                double G = G_Smith( NoV, NoL, roughness );
+                double G_Vis = G * VoH / (NoH * NoV);
+                double Fc = pow( 1.0 - VoH, 5 );
+                A += (1.0 - Fc) * G_Vis;
+                B += Fc * G_Vis;
+            }
+        }
+        A *= invSamples;
+        B *= invSamples;
+        _maxValue = std::max( A, _maxValue );
+        //A = saturate( A );
+        //B = saturate( B );
+        return Vec2d( A, B );
+    }
+
+    void processRoughnessNoVLut( const std::string& filename) {
+
+        double step = 1.0/double(_size);
+
+        #pragma omp parallel
+        #pragma omp for
+
+        for ( int j = 0 ; j < _size; j++) {
+            for ( int i = 0 ; i < _size; i++) {
+                double roughness = step * j;
+                double NoV = step * i;
+                Vec2d values = integrateBRDF( roughness, NoV);
+                _lut[ i + j*_size ] = values;
+            }
+        }
+
+        std::cout << "Max A " << _maxValue << std::endl;
+        writeImage(filename.c_str(), _size, _size, _lut, "roughness");
+    }
+
+
+    inline void setRGB(png_byte *ptr, const Vec2d& val)
+    {
+        unsigned int roughness = floor(val[0]*65535);
+        unsigned int cos_theta = floor(val[1]*65535);
+
+        png_byte v0 = (png_byte)roughness >> 8;
+        png_byte v1 = (png_byte)roughness & 0xFF;
+
+        png_byte v2 = (png_byte)cos_theta >> 8;
+        png_byte v3 = (png_byte)cos_theta & 0xFF;
+
+        // to experiment output
+        double factor = 255.0; ///256;
+        ptr[0] = uint(floor(val[0]*factor));
+        ptr[1] = uint(floor(val[1]*factor));
+
+        ptr[2] = 0;
+        ptr[3] = 255;
+    }
+
+
+    int writeImage(const char* filename, int width, int height, Vec2d *buffer, const char* title)
+    {
+        int code = 0;
+        FILE *fp;
+        png_structp png_ptr;
+        png_infop info_ptr;
+        png_bytep row;
+        int bytePerPixel = 4;
+
+        // Open file for writing (binary mode)
+        fp = fopen(filename, "wb");
+        if (fp == NULL) {
+            fprintf(stderr, "Could not open file %s for writing\n", filename);
+            code = 1;
+            goto finalise;
+        }
+
+        // Initialize write structure
+        png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+        if (png_ptr == NULL) {
+            fprintf(stderr, "Could not allocate write struct\n");
+            code = 1;
+            goto finalise;
+        }
+
+        // Initialize info structure
+        info_ptr = png_create_info_struct(png_ptr);
+        if (info_ptr == NULL) {
+            fprintf(stderr, "Could not allocate info struct\n");
+            code = 1;
+            goto finalise;
+        }
+
+        // Setup Exception handling
+        if (setjmp(png_jmpbuf(png_ptr))) {
+            fprintf(stderr, "Error during png creation\n");
+            code = 1;
+            goto finalise;
+        }
+
+        png_init_io(png_ptr, fp);
+
+        // Write header (8 bit colour depth)
+        png_set_IHDR(png_ptr, info_ptr, width, height,
+                     8, PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
+                     PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+
+        // Set title
+        if (title != NULL) {
+            png_text title_text;
+            title_text.compression = PNG_TEXT_COMPRESSION_NONE;
+            title_text.key = (char*)"Title";
+            title_text.text = (char *)title;
+            png_set_text(png_ptr, info_ptr, &title_text, 1);
+        }
+
+        png_write_info(png_ptr, info_ptr);
+
+        // Allocate memory for one row (4 bytes per pixel - RGB + Alpha)
+        bytePerPixel = 4;
+        row = (png_bytep) malloc(bytePerPixel * width * sizeof(png_byte));
+
+        // Write image data
+        int x, y;
+        for (y=0 ; y<height ; y++) {
+            for (x=0 ; x<width ; x++) {
+                setRGB(&(row[x*bytePerPixel]), buffer[y*width + x]);
+            }
+            png_write_row(png_ptr, row);
+        }
+
+        // End write
+        png_write_end(png_ptr, NULL);
+
+    finalise:
+        if (fp != NULL) fclose(fp);
+        if (info_ptr != NULL) png_free_data(png_ptr, info_ptr, PNG_FREE_ALL, -1);
+        if (png_ptr != NULL) png_destroy_write_struct(&png_ptr, (png_infopp)NULL);
+        if (row != NULL) free(row);
+
+        return code;
+    }
+};
+
 /*----------------------------------------------------------------------------*/
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-s size] in.tif out.tif" << std::endl;
+    std::cerr << "Usage: " << name << " [-s size] [-r] in.tif out.tif" << std::endl;
     return 1;
 }
 
 int main(int argc, char *argv[])
 {
 
-    CubemapLevel image;
     int size = 0;
     int c;
+    bool rnov = false;
 
-    while ((c = getopt(argc, argv, "s:")) != -1)
+    while ((c = getopt(argc, argv, "s:r")) != -1)
         switch (c)
         {
         case 's': size = atof(optarg);       break;
+        case 'r': rnov = true;               break;
 
         default: return usage(argv[0]);
         }
 
     std::string input, output;
-    if ( optind < argc-1 ) {
+    if ( !rnov && optind < argc-1 ) {
+        // generate specular ibl
         input = std::string( argv[optind] );
         output = std::string( argv[optind+1] );
+
+        CubemapLevel image;
+        image.loadCubemap(input);
+        image.computeSpecularIrradiance( output, size );
+
+    } else if ( rnov && optind < argc ) {
+        // generate roughness nov
+        output = std::string( argv[optind] );
+        if (!size)
+            size = 512;
+        RougnessNoVLUT lut(size);
+        lut.processRoughnessNoVLut( output );
+
     } else {
         return usage( argv[0] );
     }
 
-    image.loadCubemap(input);
-    image.computeSpecularIrradiance( output, size );
 
     return 0;
 }
