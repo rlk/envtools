@@ -380,7 +380,7 @@ struct RougnessNoVLUT {
         double k = roughness * roughness * 0.5;
         double G1_ndl = G1(ndl,k);
         double G1_ndv = G1(ndv,k);
-        return G1_ndl * G1_ndv;
+        return ndv * ndl * G1_ndl * G1_ndv;
     }
 
 
@@ -417,6 +417,7 @@ struct RougnessNoVLUT {
             if( NoL > 0.0 ) {
                 double G = G_Smith( NoV, NoL, roughness );
                 double G_Vis = G * VoH / (NoH * NoV);
+                //double G_Vis = G * VoH * NoL / NoH;
                 double Fc = pow( 1.0 - VoH, 5 );
                 A += (1.0 - Fc) * G_Vis;
                 B += Fc * G_Vis;
@@ -424,9 +425,7 @@ struct RougnessNoVLUT {
         }
         A *= invSamples;
         B *= invSamples;
-        _maxValue = std::max( A, _maxValue );
-        //A = saturate( A );
-        //B = saturate( B );
+
         return Vec2d( A, B );
     }
 
@@ -442,14 +441,13 @@ struct RougnessNoVLUT {
 
         for ( int j = 0 ; j < _size; j++) {
             for ( int i = 0 ; i < _size; i++) {
-                double roughness = step * j;
-                double NoV = step * i;
+                double roughness = step * ( j + 0.5 );
+                double NoV = step * (i + 0.5);
                 Vec2d values = integrateBRDF( roughness, NoV);
                 _lut[ i + j*_size ] = values;
             }
         }
 
-        std::cout << "Max A " << _maxValue << std::endl;
         writeImage(filename.c_str(), _size, _size, _lut, "roughness");
     }
 
@@ -466,12 +464,17 @@ struct RougnessNoVLUT {
         png_byte v3 = (png_byte)cos_theta & 0xFF;
 
         // to experiment output
-        double factor = 255.0; ///256;
+#if 0   // for debug
+        double factor = 255.0;
         ptr[0] = uint(floor(val[0]*factor));
         ptr[1] = uint(floor(val[1]*factor));
+#endif
 
-        ptr[2] = 0;
-        ptr[3] = 255;
+        ptr[0] = v0;
+        ptr[1] = v1;
+
+        ptr[2] = v2;
+        ptr[3] = v3;
     }
 
 
