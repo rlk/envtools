@@ -135,6 +135,7 @@ struct CubemapLevel {
 
             for ( uint32 i = 0; i < _width; i++ ) {
                 int index = lineIndex + i*_samplePerPixel;
+
                 //Vec3d color = Vec3d( _images[face][ index ], _images[face][ index + 1 ], _images[face][ index +2 ] );
 
                 // center ray on texel center
@@ -172,7 +173,12 @@ struct CubemapLevel {
         Vec3d N = R;
         Vec3d V = R;
         Vec3d prefilteredColor = Vec3d(0,0,0);
-        const uint NumSamples = 1024;
+        uint NumSamples = 1024;
+
+        // no roughness, it's a perfect reflection
+        // no need sampling for this
+        if ( roughness == 0.0 )
+            NumSamples = 1;
         double totalWeight = 0;
 
         for( uint i = 0; i < NumSamples; i++ ) {
@@ -303,7 +309,7 @@ struct CubemapLevel {
             ss << output << "_" << size << "_" << roughness << ".tif";
 
             std::cout << "compute specular with roughness " << roughness << " 6 x " << size << " x " << size << " to " << ss.str() << std::endl;
-            cubemap.computeSpecularAtLevel( step * i, *this);
+            cubemap.computeSpecularAtLevel( roughness, *this);
             cubemap.write( ss.str() );
         }
 
@@ -457,24 +463,37 @@ struct RougnessNoVLUT {
         unsigned int roughness = floor(val[0]*65535);
         unsigned int cos_theta = floor(val[1]*65535);
 
-        png_byte v0 = (png_byte)roughness >> 8;
-        png_byte v1 = (png_byte)roughness & 0xFF;
+        png_byte v1 = (png_byte)(roughness >> 8 & 0xFF);
+        png_byte v0 = (png_byte)roughness & 0xFF;
 
-        png_byte v2 = (png_byte)cos_theta >> 8;
-        png_byte v3 = (png_byte)cos_theta & 0xFF;
-
-        // to experiment output
-#if 0   // for debug
-        double factor = 255.0;
-        ptr[0] = uint(floor(val[0]*factor));
-        ptr[1] = uint(floor(val[1]*factor));
-#endif
+        png_byte v3 = (png_byte)(cos_theta >> 8 & 0xFF);
+        png_byte v2 = (png_byte)cos_theta & 0xFF;
 
         ptr[0] = v0;
         ptr[1] = v1;
 
         ptr[2] = v2;
         ptr[3] = v3;
+
+
+#if 0   // for debug
+        // to experiment output
+        // simluate unpacking
+
+        double a = (ptr[0] + ptr[1]*(65280.0/255.0))/65535.0;
+        double b = (ptr[2] + ptr[3]*(65280.0/255.0))/65535.0;
+
+        double aDiff = fabs( a - val[0] );
+        double bDiff = fabs( b - val[1] );
+
+        if ( aDiff > 1e-4 )
+            std::cerr << "something wrong in the lut encoding, error A " << aDiff << std::endl;
+
+        if ( bDiff > 1e-4 )
+            std::cerr << "something wrong in the lut encoding, error B " << bDiff << std::endl;
+#endif
+
+
     }
 
 
