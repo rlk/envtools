@@ -1,36 +1,31 @@
 
 src="$1"
 dst="$2"
+size="$3"
 
-image_magick=""
+pid=$$
+iconvert "${src}" /tmp/base_${pid}.tif
 
-iconvert "${src}" /tmp/base.tif
-./envremap -o cube /tmp/base.tif /tmp/cubemap.tif
-./envtospecular /tmp/cubemap.tif /tmp/specular
+let "cubemap_size=${size}/2"
 
-offset=0
-for size in 1024 512 256 128 64 32 16 8 4 2
+./envremap -o cube -n $cubemap_size /tmp/base_${pid}.tif /tmp/cubemap_${pid}.tif
+base_name=/tmp/specular_${pid}
+./envtospecular /tmp/cubemap_${pid}.tif ${base_name}
+
+
+for current_size in 1024 512 256 128 64 32 16 8 4 2 1
 do
-    base="/tmp/specular"
-    let "size1=${size}*2"
-    filename="$(ls ${base}_${size}_*.tif)"
-    if [ $? -ne 0 ]
+    base="${base_name}"
+    let "width_rect=${current_size}*2"
+    filename="$(ls ${base}_${current_size}_*.tif 2>/dev/null)"
+    if [ "$?" -ne 0 ]
     then
         continue
     fi
 
-    let "size2=${size1}*2"
+    filename_output="${base}_rect_${width_rect}.tif"
+    ./envremap -i cube -o rect -n "${current_size}" "${filename}" "${filename_output}"
 
-    filename_output="${base}_rect_${size1}.tif"
-    ./envremap -i cube -o rect -n "${size1}" "${filename}" "${filename_output}"
-    colorspace="-colorspace rgb"
-    #colorspace=""
-    if [ -z "${image_magick}" ]
-    then
-        image_magick="convert -page ${size2}x${size2}+0+0 ${filename_output} ${colorspace}"
-    else
-        image_magick="${image_magick} -page +0+${offset} ${filename_output} ${colorspace}"
-    fi
-    let "offset+=${size1}"
 done
-$(${image_magick} -flatten ${dst})
+
+bash -x ./build_mipmap.sh "${base}_rect_" "${dst}"

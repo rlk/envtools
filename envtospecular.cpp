@@ -127,6 +127,16 @@ struct CubemapLevel {
 
     void iterateOnFace( int face, float roughness, const CubemapLevel& cubemap ) {
 
+        // more the roughness is and more the solid angle is big
+        // so we want to adapt the number of sample depends on roughness
+        // eg for a cubemap a solid angle of 180 means 3 times the pixel area
+        // _width*_width*3 is the maximum sample
+        double maxSamplesComputed = floor(cubemap._width*cubemap._width*3.0*roughness);
+        uint numSamples = std::max(1.0, floor(maxSamplesComputed * 0.10) ); // take 10% of pixel to sample
+        if ( face == 0 )
+            std::cout << "use " << numSamples << " sample for roughness " << roughness << std::endl;
+
+
         double xInvFactor = 2.0/double(_width);
         #pragma omp parallel
         #pragma omp for
@@ -148,7 +158,7 @@ struct CubemapLevel {
                 Vec3d direction = Vec3d( vecX + vecY + vecZ );
                 direction.normalize();
 
-                Vec3d resultColor = cubemap.prefilterEnvMap( roughness, direction );
+                Vec3d resultColor = cubemap.prefilterEnvMap( roughness, direction, numSamples );
 
                 _images[face][ index     ] = resultColor[0];
                 _images[face][ index + 1 ] = resultColor[1];
@@ -169,20 +179,15 @@ struct CubemapLevel {
         }
     }
 
-    Vec3d prefilterEnvMap( float roughness, const Vec3d& R ) const {
+    Vec3d prefilterEnvMap( float roughness, const Vec3d& R, const uint numSamples ) const {
         Vec3d N = R;
         Vec3d V = R;
         Vec3d prefilteredColor = Vec3d(0,0,0);
-        uint NumSamples = 1024;
 
-        // no roughness, it's a perfect reflection
-        // no need sampling for this
-        if ( roughness == 0.0 )
-            NumSamples = 1;
         double totalWeight = 0;
 
-        for( uint i = 0; i < NumSamples; i++ ) {
-            Vec2d Xi = hammersley( i, NumSamples );
+        for( uint i = 0; i < numSamples; i++ ) {
+            Vec2d Xi = hammersley( i, numSamples );
             Vec3d H = importanceSampleGGX( Xi, roughness, N );
             Vec3d L =  H * dot( V, H ) * 2.0 - V;
             double NoL = saturate( dot( N, L ) );
@@ -285,7 +290,7 @@ struct CubemapLevel {
         iterateOnFace(5, roughness, cubemap);
     }
 
-    void computeSpecularIrradiance( const std::string& output, int startSize = 0 ) {
+    void computeSpecularIrradiance( const std::string& output, int startSize = 0, int startMipMap = 0 ) {
 
         int computeStartSize = startSize;
         if (!computeStartSize)
@@ -294,15 +299,18 @@ struct CubemapLevel {
         int nbMipmap = log2(computeStartSize);
         std::cout << nbMipmap << " mipmap levels will be generated from " << computeStartSize << " x " << computeStartSize << std::endl;
 
+        int topMipMap = nbMipmap;
+        nbMipmap -= startMipMap;
+
         float start = 0.0;
         float stop = 1.0;
 
         float step = (stop-start)*1.0/float(nbMipmap);
 
-        for ( int i = 0; i < nbMipmap; i++ ) {
+        for ( int i = 0; i < nbMipmap+1; i++ ) {
             CubemapLevel cubemap;
             float roughness = step * i;
-            uint16 size = pow(2, nbMipmap-i );
+            uint16 size = pow(2, topMipMap-i );
             cubemap.init( size, size, _samplePerPixel, _bitsPerPixel);
 
             std::stringstream ss;
@@ -374,18 +382,18 @@ struct RougnessNoVLUT {
     }
 
     // w is either Ln or Vn
-    double G1( double ndw, double k ) {
+    double G1_Schlick( double ndw, double k ) {
         // One generic factor of the geometry function divided by ndw
         // NB : We should have k > 0
         return 1.0 / ( ndw*(1.0-k) + k );
     }
 
-    double G_Smith( double ndl,double ndv,double roughness) {
+    double G_Schlick( double ndv,double ndl,double roughness) {
         // Schlick with Smith-like choice of k
         // cf http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf p3
         double k = roughness * roughness * 0.5;
-        double G1_ndl = G1(ndl,k);
-        double G1_ndv = G1(ndv,k);
+        double G1_ndl = G1_Schlick(ndl,k);
+        double G1_ndv = G1_Schlick(ndv,k);
         return ndv * ndl * G1_ndl * G1_ndv;
     }
 
@@ -393,7 +401,7 @@ struct RougnessNoVLUT {
     // http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
     // page 7
     // this is the integrate function used to build the LUT
-    Vec2d integrateBRDF( double roughness, double NoV ) {
+    Vec2d integrateBRDF( double roughness, double NoV, const uint numSamples ) {
 
         Vec3d V;
         V[0] = sqrt( 1.0 - NoV * NoV ); // sin V.y = 0;
@@ -407,12 +415,11 @@ struct RougnessNoVLUT {
 
         double A = 0.0;
         double B = 0.0;
-        const uint NumSamples = 1024;
-        const double invSamples = 1.0/NumSamples;
+        const double invSamples = 1.0/numSamples;
 
-        for( uint i = 0; i < NumSamples; i++ ) {
+        for( uint i = 0; i < numSamples; i++ ) {
 
-            Vec2d Xi = hammersley( i, NumSamples );
+            Vec2d Xi = hammersley( i, numSamples );
             Vec3d H = importanceSampleGGX( Xi, roughness, N );
             Vec3d L =  H * dot( V, H ) * 2.0 - V;
 
@@ -421,9 +428,9 @@ struct RougnessNoVLUT {
             double VoH = saturate( V*H );
 
             if( NoL > 0.0 ) {
-                double G = G_Smith( NoV, NoL, roughness );
+                double G = G_Schlick( NoV, NoL, roughness );
                 double G_Vis = G * VoH / (NoH * NoV);
-                //double G_Vis = G * VoH * NoL / NoH;
+
                 double Fc = pow( 1.0 - VoH, 5 );
                 A += (1.0 - Fc) * G_Vis;
                 B += Fc * G_Vis;
@@ -442,32 +449,47 @@ struct RougnessNoVLUT {
 
         double step = 1.0/double(_size);
 
+        const uint numSamples = 1024*16;
+        // const uint numSamples2 = 1024*32;
+        // double maxError = -1.0;
+
         #pragma omp parallel
         #pragma omp for
 
         for ( int j = 0 ; j < _size; j++) {
+            double roughness = step * ( j + 0.5 );
             for ( int i = 0 ; i < _size; i++) {
-                double roughness = step * ( j + 0.5 );
                 double NoV = step * (i + 0.5);
-                Vec2d values = integrateBRDF( roughness, NoV);
+                Vec2d values = integrateBRDF( roughness, NoV, numSamples);
+#if 0
+                // Vec2d values2 = integrateBRDF( roughness, NoV, numSamples2);
+
+                double diff0 = fabs(values[0]-values2[0]);
+                double diff1 = fabs(values[1]-values2[1]);
+                // if ( diff0 > 1e-4 || diff1 > 1e-4 ) {
+                //     std::cout << "diff0 " << diff0 << " diff1 " << diff1 << std::endl;
+                // }
+                maxError = std::max( diff1, maxError);
+                maxError = std::max( diff0, maxError);
+#endif
                 _lut[ i + j*_size ] = values;
             }
         }
-
+//        std::cout <<"max error " << maxError << std::endl;
         writeImage(filename.c_str(), _size, _size, _lut, "roughness");
     }
 
 
     inline void setRGB(png_byte *ptr, const Vec2d& val)
     {
-        unsigned int roughness = floor(val[0]*65535);
-        unsigned int cos_theta = floor(val[1]*65535);
+        unsigned int A = floor(val[0]*65535);
+        unsigned int B = floor(val[1]*65535);
 
-        png_byte v1 = (png_byte)(roughness >> 8 & 0xFF);
-        png_byte v0 = (png_byte)roughness & 0xFF;
+        png_byte v1 = (png_byte)(A >> 8 & 0xFF);
+        png_byte v0 = (png_byte)A & 0xFF;
 
-        png_byte v3 = (png_byte)(cos_theta >> 8 & 0xFF);
-        png_byte v2 = (png_byte)cos_theta & 0xFF;
+        png_byte v3 = (png_byte)(B >> 8 & 0xFF);
+        png_byte v2 = (png_byte)B & 0xFF;
 
         ptr[0] = v0;
         ptr[1] = v1;
@@ -585,7 +607,7 @@ struct RougnessNoVLUT {
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-s size] [-r] in.tif out.tif" << std::endl;
+    std::cerr << "Usage: " << name << " [-s size] [-m minMipmap] [-r] in.tif out.tif" << std::endl;
     return 1;
 }
 
@@ -594,12 +616,14 @@ int main(int argc, char *argv[])
 
     int size = 0;
     int c;
+    int minMipmap = 0;
     bool rnov = false;
 
-    while ((c = getopt(argc, argv, "s:r")) != -1)
+    while ((c = getopt(argc, argv, "s:m:r")) != -1)
         switch (c)
         {
         case 's': size = atof(optarg);       break;
+        case 'm': minMipmap = atof(optarg);  break;
         case 'r': rnov = true;               break;
 
         default: return usage(argv[0]);
@@ -613,13 +637,13 @@ int main(int argc, char *argv[])
 
         CubemapLevel image;
         image.loadCubemap(input);
-        image.computeSpecularIrradiance( output, size );
+        image.computeSpecularIrradiance( output, size, minMipmap );
 
     } else if ( rnov && optind < argc ) {
         // generate roughness nov
         output = std::string( argv[optind] );
         if (!size)
-            size = 512;
+            size = 256;
         RougnessNoVLUT lut(size);
         lut.processRoughnessNoVLut( output );
 
