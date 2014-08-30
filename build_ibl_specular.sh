@@ -1,16 +1,26 @@
-
 src="$1"
 dst="$2"
 size="$3"
 
 pid=$$
-iconvert "${src}" /tmp/base_${pid}.tif
 
-let "cubemap_size=${size}/2"
+# you need to have openimageio
+iinfo --stats "${src}" | grep '6 subimages'
+already_cubemap=$?
 
-./envremap -o cube -n $cubemap_size /tmp/base_${pid}.tif /tmp/cubemap_${pid}.tif
-base_name=/tmp/specular_${pid}
-./envtospecular /tmp/cubemap_${pid}.tif ${base_name}
+if [ ! ${already_cubemap} ]
+then
+    iconvert "${src}" /tmp/base_${pid}.tif
+
+    let "cubemap_size=${size}/2"
+
+    ./envremap -o cube -n $cubemap_size /tmp/base_${pid}.tif /tmp/cubemap_${pid}.tif
+    base_name=/tmp/specular_${pid}
+
+    src="/tmp/cubemap_${pid}.tif"
+fi
+
+./envtospecular "${src}" "${base_name}"
 
 
 for current_size in 1024 512 256 128 64 32 16 8 4 2 1
