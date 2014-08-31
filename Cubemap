@@ -1,0 +1,56 @@
+/* -*-c++-*- */
+
+
+#ifndef CUBEMAP_H
+#define CUBEMAP_H 1
+
+#include "Math"
+#include <string>
+
+typedef unsigned int uint;
+typedef struct tiff TIFF;
+
+static Vec3f CubemapFace[6][3] = {
+    { Vec3f(0,0,-1), Vec3f(0,-1,0), Vec3f(1,0,0) },// x positif
+    { Vec3f(0,0,1), Vec3f(0,-1,0), Vec3f(-1,0,0) }, // x negatif
+
+    { Vec3f(1,0,0), Vec3f(0,0,1), Vec3f(0,1,0) },  // y positif
+    { Vec3f(1,0,0), Vec3f(0,0,-1),Vec3f(0,-1,0) }, // y negatif
+
+    { Vec3f(1,0,0), Vec3f(0,-1,0), Vec3f(0,0,1) },  // z positif
+    { Vec3f(-1,0,0), Vec3f(0,-1,0),Vec3f(0,0,-1) } // z negatif
+};
+
+enum FixUpType {
+    FIXUP_NONE,
+    CP_FIXUP_STRETCH,
+    CP_FIXUP_WARP,
+    CP_FIXUP_BENT
+};
+
+struct Cubemap {
+
+    int _size;
+    float* _images[6];
+    int _samplePerPixel;
+    int _bitsPerSample;
+
+    Cubemap();
+    ~Cubemap();
+
+    void init( int size, int sample = 4, int bits = 32);
+    void write( const std::string& filename );
+    void sample(const Vec3f& direction, Vec3f& color ) const;
+
+    void texelCoordToVect(int faceIdx, float U, float V, float* XYZ, FixUpType fixupType);
+
+    void loadEnvFace(TIFF* tif, int face);
+    bool loadCubemap(const std::string& name);
+
+    void buildNormalizerSolidAngleCubemap(int size, FixUpType fixupType);
+    float texelCoordSolidAngle( int faceIndex, float u, float v);
+
+    Cubemap* shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupType, int outputCubemapSize = 256 );
+};
+
+#endif

@@ -1,8 +1,14 @@
 /* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield
+
+   Exracted from osg by cedric pinson
 */
+
+#ifndef MATH_H
+#define MATH_H 1
+
 #include <cmath>
 
-const float PI = 3.14159265358979;
+#define PI 3.14159265358979
 
 class Vec2f
 {
@@ -640,8 +646,40 @@ inline Vec3d componentMultiply(const Vec3d& lhs, const Vec3d& rhs)
     return Vec3d(lhs[0]*rhs[0], lhs[1]*rhs[1], lhs[2]*rhs[2]);
 }
 
+inline void slerp( Vec3f& res, const Vec3f& a, const Vec3f& b, float t)
+{
+    float angle = acosf(a * b);
 
-double radicalInverse_VdC(uint32 bits) {
+    if (0.0f == angle)
+    {
+        res[0] = a[0];
+        res[1] = a[1];
+        res[2] = a[2];
+    }
+    else if (PI == angle)
+    {
+        // Can't recovert!
+        res[0] = 0;
+        res[1] = 0;
+        res[2] = 0;
+    }
+    else
+    {
+        res[0] = (sinf((1.0-t)*angle)/sinf(angle))*a[0] + (sinf(t*angle)/sinf(angle))*b[0];
+        res[1] = (sinf((1.0-t)*angle)/sinf(angle))*a[1] + (sinf(t*angle)/sinf(angle))*b[1];
+        res[2] = (sinf((1.0-t)*angle)/sinf(angle))*a[2] + (sinf(t*angle)/sinf(angle))*b[2];
+    }
+}
+
+template <typename T>
+inline T lerp( const T& a, const T& b, float t)
+{
+    return a + (( b-a ) * t );
+}
+
+
+
+inline double radicalInverse_VdC(unsigned int bits) {
     bits = (bits << 16) | (bits >> 16);
     bits = ((bits & 0x55555555) << 1) | ((bits & 0xAAAAAAAA) >> 1);
     bits = ((bits & 0x33333333) << 2) | ((bits & 0xCCCCCCCC) >> 2);
@@ -650,18 +688,22 @@ double radicalInverse_VdC(uint32 bits) {
     return double(bits) * 2.3283064365386963e-10; // / 0x100000000
 }
 
-Vec2d hammersley(uint32 i, uint32 N) {
+inline Vec2d hammersley(unsigned int i, unsigned int N) {
     return Vec2d(double(i)/double(N), radicalInverse_VdC(i));
 }
 
-template <typename T> T cross( const T& a, const T& b ) {
+template <typename T>
+inline T cross( const T& a, const T& b ) {
     return a^b;
 }
-template <typename T> T normalize( const T& a ) {
+
+template <typename T>
+inline T normalize( const T& a ) {
     return a * ( 1.0 / a.length() );
 }
 
-template <typename T> typename T::value_type dot( const T& a, const T& b ) {
+template <typename T>
+inline typename T::value_type dot( const T& a, const T& b ) {
     return a * b;
 }
 
@@ -669,7 +711,7 @@ template<typename T>
 inline T saturate(T v) { return v<0.0?0.0:v>1.0?1.0:v; }
 
 
-Vec3d importanceSampleGGX( Vec2d Xi, float roughness, Vec3d N )
+inline Vec3d importanceSampleGGX( Vec2d Xi, float roughness, Vec3d N )
 {
     float a = roughness * roughness;
     float Phi = 2.0 * PI * Xi[0];
@@ -685,3 +727,5 @@ Vec3d importanceSampleGGX( Vec2d Xi, float roughness, Vec3d N )
 // Tangent to world space
     return TangentX * H[0] + TangentY * H[1] + N * H[2];
 }
+
+#endif

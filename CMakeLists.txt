@@ -14,12 +14,10 @@ find_package(PNG)
 find_package(TIFF)
 find_package(JPEG)
 
-
 add_executable(envremap envremap.c)
 target_link_libraries(envremap ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} )
 
-
-add_executable(envtoirr envtoirr.c)
+add_executable(envtoirr envtoirr.cpp Cubemap.cpp )
 target_link_libraries(envtoirr ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} )
 
 # use the prefilter technic from UE4 but I think
