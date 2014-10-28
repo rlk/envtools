@@ -14,6 +14,8 @@ find_package(PNG)
 find_package(TIFF)
 find_package(JPEG)
 
+include_directories( ${TIFF_INCLUDE_DIR} )
+
 add_executable(envremap envremap.c)
 target_link_libraries(envremap ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} )
 
