@@ -1,11 +1,19 @@
 #include <cmath>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <tiffio.h>
 
 #include "Cubemap"
 #include "sRGB.h"
 #include "gray.h"
+
+#include <OpenImageIO/imageio.h>
+#include <OpenImageIO/filter.h>
+#include <OpenImageIO/imagebuf.h>
+#include <OpenImageIO/imagebufalgo.h>
+OIIO_NAMESPACE_USING
+
 
 #define CP_UDIR     0
 #define CP_VDIR     1
@@ -103,8 +111,6 @@ void EvalSHBasis(const float* dir, double* res )
     res[23] = (-3*sqrt(35/(2.*PI))*(x[3] - 3*xx*y[2])*zz)/4.;
     res[24] = (3*sqrt(35/PI)*(x[4] - 6*x[2]*y[2] + y[4]))/16.;
 }
-
-
 
 
 
@@ -520,18 +526,28 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupTy
 
     // dump spherical harmonics coefficient
     // shRGB[I] * BandFactor[I]
-    std::cout << "shR:" << std::endl;
-    for (int i = 0; i < NUM_SH_COEFFICIENT; ++i)
-        std::cout << SHr[i] * SHBandFactor[i] << " ";
+    std::cout << "shR: [ " << SHr[0] * SHBandFactor[0];
+    for (int i = 1; i < NUM_SH_COEFFICIENT; ++i)
+        std::cout << ", " << SHr[i] * SHBandFactor[i];
+    std::cout << " ]" << std::endl;
 
-    std::cout << std::endl << "shG:" << std::endl;
-    for (int i = 0; i < NUM_SH_COEFFICIENT; ++i)
-        std::cout << SHg[i] * SHBandFactor[i] << " ";
+    std::cout << "shG: [ " << SHg[0] * SHBandFactor[0];
+    for (int i = 1; i < NUM_SH_COEFFICIENT; ++i)
+        std::cout << ", " << SHg[i] * SHBandFactor[i];
+    std::cout << " ]" << std::endl;
 
-    std::cout << std::endl << "shB:" << std::endl;
+    std::cout << "shB: [ " << SHb[0] * SHBandFactor[0];
     for (int i = 0; i < NUM_SH_COEFFICIENT; ++i)
-        std::cout << SHb[i] * SHBandFactor[i] << " ";
+        std::cout << ", " << SHb[i] * SHBandFactor[i];
+    std::cout << " ]" << std::endl;
+
     std::cout << std::endl;
+
+    std::cout << "shCoef: [ " << SHr[0] * SHBandFactor[0] << ", " << SHg[0] * SHBandFactor[0] << ", " << SHb[0] * SHBandFactor[0];
+    for (int i = 1; i < NUM_SH_COEFFICIENT; ++i) {
+        std::cout << ", " << SHr[i] * SHBandFactor[i] << ", " << SHg[i] * SHBandFactor[i] << ", " << SHb[i] * SHBandFactor[i];
+    }
+    std::cout << " ]" << std::endl;
 
 
     for (int iFaceIdx = 0; iFaceIdx < 6; iFaceIdx++)
@@ -570,8 +586,6 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupTy
     }
     return dstCubemap;
 }
-
-
 
 
 void Cubemap::write( const std::string& filename )
@@ -686,4 +700,325 @@ void Cubemap::loadEnvFace(TIFF* tif, int face)
             }
         }
     }
+}
+
+
+
+
+
+ImageBuf* resize(Cubemap& cm, int size ,int index) {
+
+    ImageSpec specIn;
+    specIn.width = cm._size;
+    specIn.height = cm._size;
+    specIn.full_x = 0;
+    specIn.full_y = 0;
+    specIn.full_width = specIn.width;
+    specIn.full_height = specIn.width;
+    specIn.nchannels = cm._samplePerPixel;
+    specIn.format = TypeDesc::FLOAT;
+    specIn.attribute("oiio:ColorSpace", "Linear");
+
+    ImageBuf imageBufIn( specIn, cm._images[index] );
+
+    ImageSpec specResize( size, size, 4, TypeDesc::FLOAT );
+    std::stringstream ss; ss << "/tmp/image_ " << index << ".tif";
+    ImageBuf* imageBufResize = new ImageBuf( ss.str().c_str(), specResize);
+    ImageBufAlgo::resize(*imageBufResize, imageBufIn );
+
+    imageBufResize->save();
+
+    return imageBufResize;
+}
+
+std::string getOutputImageFilename(int level, int index, const std::string& output) {
+    std::stringstream ss;
+    ss << output << "fixup_" << level << "_" << index << ".tif";
+    return ss.str();
+}
+
+void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
+
+
+    int fixSize = 1;
+    int targetSize = size;
+    int sizeWithoutBorder = targetSize - 2;
+
+    std::cout << "fix border on image "  << targetSize << " x " << targetSize << std::endl;
+
+    ImageBuf* resized[6];
+    for ( int i = 0; i < 6; i++) {
+        resized[i] = resize(cm, sizeWithoutBorder , i );
+    }
+
+    int subSize = sizeWithoutBorder;
+
+    // x
+    {
+        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageBuf imageBufOut( getOutputImageFilename(level, 0, output).c_str(), specOut);
+        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[0] );
+
+        //  top edge: y positif
+        ImageBuf spanTop;
+        ImageBufAlgo::rotate90(spanTop, *resized[2]);
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
+                                 spanTop, ROI(0, subSize, subSize-1, subSize));
+        }
+
+        //  right edge: z negatif
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
+                                 *resized[5], ROI(0 ,1, 0, subSize));
+        }
+
+
+        //  left edge: z negatif
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
+                                 *resized[4], ROI( subSize-1 ,subSize, 0, subSize));
+        }
+
+        //  bottom edge: y negatif
+        ImageBuf spanBot;
+        ImageBufAlgo::rotate270(spanBot, *resized[3]);
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
+                                 spanBot, ROI(0, subSize, 0, 1));
+        }
+        imageBufOut.save();
+    }
+
+
+    // -x
+    {
+        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageBuf imageBufOut( getOutputImageFilename(level, 1, output).c_str(), specOut);
+        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[1] );
+
+        //  top edge: y positif
+        ImageBuf spanTop;
+        ImageBufAlgo::rotate270(spanTop, *resized[2]);
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
+                                 spanTop, ROI(0, subSize, subSize-1, subSize));
+        }
+
+        //  right edge: z negatif
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
+                                 *resized[4], ROI(0 ,1, 0, subSize));
+        }
+
+
+        //  left edge: z negatif
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
+                                 *resized[5], ROI( subSize-1 ,subSize, 0, subSize));
+        }
+
+        //  bottom edge: y negatif
+        ImageBuf spanBot;
+        ImageBufAlgo::rotate90(spanBot, *resized[3]);
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
+                                 spanBot, ROI(0, subSize, 0, 1));
+        }
+        imageBufOut.save();
+    }
+
+
+    // y
+    {
+        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageBuf imageBufOut( getOutputImageFilename(level, 2, output).c_str(), specOut);
+        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[2] );
+
+        //  top edge: y positif
+        {
+            ImageBuf span;
+            ImageBufAlgo::flop(span, *resized[5]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
+                                     span, ROI(0, subSize, 0, 1));
+            }
+        }
+
+        //  right edge: x pos
+        {
+            ImageBuf span;
+            ImageBufAlgo::rotate270(span, *resized[0]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
+                                     span, ROI(0 ,1, 0, subSize));
+            }
+        }
+
+
+        //  left edge: x neg
+        {
+            ImageBuf span;
+            ImageBufAlgo::rotate90(span, *resized[1]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
+                                     span, ROI(subSize-1 ,subSize, 0, subSize));
+            }
+        }
+
+        //  bottom edge: z positif
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
+                                 *resized[4], ROI(0, subSize, 0, 1));
+        }
+        imageBufOut.save();
+    }
+
+
+    // -y
+    {
+        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageBuf imageBufOut( getOutputImageFilename(level, 3, output).c_str(), specOut);
+        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[3] );
+
+        //  top edge: z positif
+        {
+            ImageBuf span;
+            //ImageBufAlgo::flop(span, *resized[4]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
+                                     *resized[4], ROI(0, subSize, subSize-1, subSize));
+            }
+        }
+
+        //  right edge: x pos
+        {
+            ImageBuf span;
+            ImageBufAlgo::rotate90(span, *resized[0]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
+                                     span, ROI(0 ,1, 0, subSize));
+            }
+        }
+
+
+        //  left edge: x neg
+        {
+            ImageBuf span;
+            ImageBufAlgo::rotate270(span, *resized[1]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
+                                     span, ROI(subSize-1 ,subSize, 0, subSize));
+            }
+        }
+
+        //  bottom edge: z neg
+        {
+            ImageBuf span;
+            ImageBufAlgo::flop(span, *resized[5]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
+                                     span, ROI(0, subSize, subSize-1, subSize));
+            }
+        }
+        imageBufOut.save();
+    }
+
+
+    // z
+    {
+        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageBuf imageBufOut( getOutputImageFilename(level, 4, output).c_str(), specOut);
+        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[4] );
+
+        //  top edge: y pos
+        {
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
+                                     *resized[2], ROI(0, subSize, subSize-1, subSize));
+            }
+        }
+
+        //  right edge: x pos
+        {
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
+                                     *resized[0], ROI(0 ,1, 0, subSize));
+            }
+        }
+
+
+        //  left edge: x neg
+        {
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
+                                     *resized[1], ROI(subSize-1 ,subSize, 0, subSize));
+            }
+        }
+
+        //  bottom edge: y neg
+        for ( int i = 0; i < fixSize; i++ ) {
+            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
+                                 *resized[3], ROI(0, subSize, 0, 1));
+        }
+        imageBufOut.save();
+    }
+
+
+
+    // -z
+    {
+        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageBuf imageBufOut( getOutputImageFilename(level, 5, output).c_str(), specOut);
+        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[5] );
+
+        //  top edge: y pos
+        {
+            ImageBuf span;
+            ImageBufAlgo::flop(span, *resized[2]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
+                                     span, ROI(0, subSize, 0,1));
+            }
+        }
+
+        //  right edge: x neg
+        {
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
+                                     *resized[1], ROI(0 ,1, 0, subSize));
+            }
+        }
+
+
+        //  left edge: x pos
+        {
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
+                                     *resized[0], ROI(subSize-1 ,subSize, 0, subSize));
+            }
+        }
+
+        //  bottom edge: y neg
+        {
+            ImageBuf span;
+            ImageBufAlgo::flop(span, *resized[3]);
+            for ( int i = 0; i < fixSize; i++ ) {
+                ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
+                                     span, ROI(0, subSize, subSize-1, subSize));
+            }
+        }
+        imageBufOut.save();
+    }
+
+    for ( int i = 0; i < 6; i++) {
+        delete resized[i];
+    }
+
+}
+
+
+void Cubemap::fixupCubeEdges( const std::string& output, int level ) {
+
+    fixImage( *this, level, this->_size, output );
 }

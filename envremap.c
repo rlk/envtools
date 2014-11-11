@@ -361,6 +361,7 @@ static void image_writer(const char *name, image *out, int n)
             TIFFSetField(T, TIFFTAG_BITSPERSAMPLE,   out[f].b);
             TIFFSetField(T, TIFFTAG_SAMPLEFORMAT,    out[f].s);
             TIFFSetField(T, TIFFTAG_ORIENTATION,     ORIENTATION_TOPLEFT);
+            //TIFFSetField(T, TIFFTAG_ORIENTATION,     ORIENTATION_BOTLEFT);
             TIFFSetField(T, TIFFTAG_PLANARCONFIG,    PLANARCONFIG_CONTIG);
 
             if (out[f].c == 1)
