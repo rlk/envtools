@@ -706,30 +706,6 @@ void Cubemap::loadEnvFace(TIFF* tif, int face)
 
 
 
-ImageBuf* resize(Cubemap& cm, int size ,int index) {
-
-    ImageSpec specIn;
-    specIn.width = cm._size;
-    specIn.height = cm._size;
-    specIn.full_x = 0;
-    specIn.full_y = 0;
-    specIn.full_width = specIn.width;
-    specIn.full_height = specIn.width;
-    specIn.nchannels = cm._samplePerPixel;
-    specIn.format = TypeDesc::FLOAT;
-    specIn.attribute("oiio:ColorSpace", "Linear");
-
-    ImageBuf imageBufIn( specIn, cm._images[index] );
-
-    ImageSpec specResize( size, size, 4, TypeDesc::FLOAT );
-    std::stringstream ss; ss << "/tmp/image_ " << index << ".tif";
-    ImageBuf* imageBufResize = new ImageBuf( ss.str().c_str(), specResize);
-    ImageBufAlgo::resize(*imageBufResize, imageBufIn );
-
-    imageBufResize->save();
-
-    return imageBufResize;
-}
 
 std::string getOutputImageFilename(int level, int index, const std::string& output) {
     std::stringstream ss;
@@ -737,25 +713,202 @@ std::string getOutputImageFilename(int level, int index, const std::string& outp
     return ss.str();
 }
 
-void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
+void fixImage(Cubemap& cm, int level, const std::string& output) {
 
 
+    int size = cm._size;
     int fixSize = 1;
+
+    if ( size <= 2 ) // dont fix edge for size <= 2 need special operations
+        fixSize = 0;
+
     int targetSize = size;
-    int sizeWithoutBorder = targetSize - 2;
+    int sizeWithoutBorder = targetSize - fixSize*2;
 
-    std::cout << "fix border on image "  << targetSize << " x " << targetSize << std::endl;
+    std::cout << "fix border on cubemap to "  << size << " x " << size << " x " << 3 << std::endl;
 
+    ImageBuf* original[6];
     ImageBuf* resized[6];
+
+    // resize each image less 1 border pixel on each eadge
     for ( int i = 0; i < 6; i++) {
-        resized[i] = resize(cm, sizeWithoutBorder , i );
+
+        ImageSpec specOriginal( size, size, cm._samplePerPixel, TypeDesc::FLOAT );
+        specOriginal.attribute("oiio:ColorSpace", "Linear");
+        ImageBuf imageOriginal( specOriginal, cm._images[i] );
+
+        // Copy the first 3 channels of an RGBA, drop the alpha
+        ImageSpec specRGB( size, size, 3, TypeDesc::FLOAT );
+        specRGB.attribute("oiio:ColorSpace", "Linear");
+        ImageBuf* RGB = new ImageBuf( specRGB );
+        ImageBufAlgo::channels (*RGB, imageOriginal, 3, NULL /*default ordering*/);
+
+        ImageSpec specResize( sizeWithoutBorder, sizeWithoutBorder, 3, TypeDesc::FLOAT );
+        specResize.attribute("oiio:ColorSpace", "Linear");
+        ImageBuf* imageResized = new ImageBuf( specResize);
+
+        ImageBufAlgo::resize(*imageResized, *RGB );
+
+        resized[i] = imageResized;
+        original[i] = RGB;
     }
 
     int subSize = sizeWithoutBorder;
 
+
+    // compute 8 corner
+
+    // corner X+ top left
+    float tmp[3];
+    float corner0[3]; corner0[0] = 0; corner0[1] = 0; corner0[2] = 0;
+    {
+        // z+ top right
+        original[4]->getpixel(size-1, 0, 0, tmp );
+        corner0[0] += tmp[0]; corner0[1] += tmp[1]; corner0[2] += tmp[2];
+
+        // x+ top left
+        original[0]->getpixel(0, 0, 0, tmp );
+        corner0[0] += tmp[0]; corner0[1] += tmp[1]; corner0[2] += tmp[2];
+
+        // y+ bot right
+        original[2]->getpixel(size-1, size-1, 0, tmp );
+        corner0[0] += tmp[0]; corner0[1] += tmp[1]; corner0[2] += tmp[2];
+    }
+    corner0[0] /= 3.0; corner0[1] /= 3.0; corner0[2] /= 3.0;
+
+
+    // corner X+ top right
+    float corner1[3]; corner1[0] = 0; corner1[1] = 0; corner1[2] = 0;
+    {
+        // z- top left
+        original[5]->getpixel(0, 0, 0, tmp );
+        corner1[0] += tmp[0]; corner1[1] += tmp[1]; corner1[2] += tmp[2];
+
+        // x+ top right
+        original[0]->getpixel(size -1 , 0, 0, tmp );
+        corner1[0] += tmp[0]; corner1[1] += tmp[1]; corner1[2] += tmp[2];
+
+        // y+ top right
+        original[2]->getpixel(size-1, 0, 0, tmp );
+        corner1[0] += tmp[0]; corner1[1] += tmp[1]; corner1[2] += tmp[2];
+    }
+    corner1[0] /= 3.0; corner1[1] /= 3.0; corner1[2] /= 3.0;
+
+
+    // corner X+ bot right
+    float corner2[3]; corner2[0] = 0; corner2[1] = 0; corner2[2] = 0;
+    {
+        // z- bot left
+        original[5]->getpixel(0, size-1, 0, tmp );
+        corner2[0] += tmp[0]; corner2[1] += tmp[1]; corner2[2] += tmp[2];
+
+        // x+ bot right
+        original[0]->getpixel(size-1 , size-1, 0, tmp );
+        corner2[0] += tmp[0]; corner2[1] += tmp[1]; corner2[2] += tmp[2];
+
+        // y- bot right
+        original[3]->getpixel(size-1, size-1, 0, tmp );
+        corner2[0] += tmp[0]; corner2[1] += tmp[1]; corner2[2] += tmp[2];
+    }
+    corner2[0] /= 3.0; corner2[1] /= 3.0; corner2[2] /= 3.0;
+
+
+    // corner X+ bot left
+    float corner3[3]; corner3[0] = 0; corner3[1] = 0; corner3[2] = 0;
+    {
+        // z+ bot right
+        original[5]->getpixel(size-1, size-1, 0, tmp );
+        corner3[0] += tmp[0]; corner3[1] += tmp[1]; corner3[2] += tmp[2];
+
+        // x+ bot left
+        original[0]->getpixel(0 , size-1, 0, tmp );
+        corner3[0] += tmp[0]; corner3[1] += tmp[1]; corner3[2] += tmp[2];
+
+        // y- top right
+        original[3]->getpixel(size-1, 0, 0, tmp );
+        corner3[0] += tmp[0]; corner3[1] += tmp[1]; corner3[2] += tmp[2];
+    }
+    corner3[0] /= 3.0; corner3[1] /= 3.0; corner3[2] /= 3.0;
+
+
+    // corner X- top left
+    float corner4[3]; corner4[0] = 0; corner4[1] = 0; corner4[2] = 0;
+    {
+        // z- top right
+        original[5]->getpixel(size-1, 0, 0, tmp );
+        corner4[0] += tmp[0]; corner4[1] += tmp[1]; corner4[2] += tmp[2];
+
+        // x- top left
+        original[1]->getpixel(0, 0, 0, tmp );
+        corner4[0] += tmp[0]; corner4[1] += tmp[1]; corner4[2] += tmp[2];
+
+        // y+ top left
+        original[2]->getpixel( 0, 0, 0, tmp );
+        corner4[0] += tmp[0]; corner4[1] += tmp[1]; corner4[2] += tmp[2];
+    }
+    corner4[0] /= 3.0; corner4[1] /= 3.0; corner4[2] /= 3.0;
+
+
+    // corner X- top right
+    float corner5[3]; corner5[0] = 0; corner5[1] = 0; corner5[2] = 0;
+    {
+        // z+ top left
+        original[4]->getpixel(0, 0, 0, tmp );
+        corner5[0] += tmp[0]; corner5[1] += tmp[1]; corner5[2] += tmp[2];
+
+        // x- top right
+        original[1]->getpixel(size-1, 0, 0, tmp );
+        corner5[0] += tmp[0]; corner5[1] += tmp[1]; corner5[2] += tmp[2];
+
+        // y+ bot right
+        original[2]->getpixel( 0, size-1, 0, tmp );
+        corner5[0] += tmp[0]; corner5[1] += tmp[1]; corner5[2] += tmp[2];
+    }
+    corner5[0] /= 3.0; corner5[1] /= 3.0; corner5[2] /= 3.0;
+
+
+    // corner X- bot right
+    float corner6[3]; corner6[0] = 0; corner6[1] = 0; corner6[2] = 0;
+    {
+        // z+ bot left
+        original[4]->getpixel(0, size-1, 0, tmp );
+        corner6[0] += tmp[0]; corner6[1] += tmp[1]; corner6[2] += tmp[2];
+
+        // x- bot right
+        original[1]->getpixel(size-1, size-1, 0, tmp );
+        corner6[0] += tmp[0]; corner6[1] += tmp[1]; corner6[2] += tmp[2];
+
+        // y- top left
+        original[3]->getpixel( 0, 0, 0, tmp );
+        corner6[0] += tmp[0]; corner6[1] += tmp[1]; corner6[2] += tmp[2];
+    }
+    corner6[0] /= 3.0; corner6[1] /= 3.0; corner6[2] /= 3.0;
+
+
+    // corner X- bot left
+    float corner7[3]; corner7[0] = 0; corner7[1] = 0; corner7[2] = 0;
+    {
+        // z- bot left
+        original[5]->getpixel(size-1, size-1, 0, tmp );
+        corner7[0] += tmp[0]; corner7[1] += tmp[1]; corner7[2] += tmp[2];
+
+        // x- bot left
+        original[1]->getpixel(0, size-1, 0, tmp );
+        corner7[0] += tmp[0]; corner7[1] += tmp[1]; corner7[2] += tmp[2];
+
+        // y- top left
+        original[3]->getpixel( 0, size-1, 0, tmp );
+        corner7[0] += tmp[0]; corner7[1] += tmp[1]; corner7[2] += tmp[2];
+    }
+    corner7[0] /= 3.0; corner7[1] /= 3.0; corner7[2] /= 3.0;
+
+
+    // special case for mipmap 1
+
+
     // x
     {
-        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
         ImageBuf imageBufOut( getOutputImageFilename(level, 0, output).c_str(), specOut);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[0] );
 
@@ -787,13 +940,20 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
             ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
                                  spanBot, ROI(0, subSize, 0, 1));
         }
+
+        // corners
+        imageBufOut.setpixel( 0,0,0, corner0 );
+        imageBufOut.setpixel( size-1,0,0, corner1 );
+        imageBufOut.setpixel( size-1,size-1,0, corner2 );
+        imageBufOut.setpixel( 0,size-1,0, corner3 );
+
         imageBufOut.save();
     }
 
 
     // -x
     {
-        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
         ImageBuf imageBufOut( getOutputImageFilename(level, 1, output).c_str(), specOut);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[1] );
 
@@ -825,13 +985,20 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
             ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
                                  spanBot, ROI(0, subSize, 0, 1));
         }
+
+        // corners
+        imageBufOut.setpixel( 0,0,0, corner4 );
+        imageBufOut.setpixel( size-1,0,0, corner5 );
+        imageBufOut.setpixel( size-1,size-1,0, corner6 );
+        imageBufOut.setpixel( 0,size-1,0, corner7 );
+
         imageBufOut.save();
     }
 
 
     // y
     {
-        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
         ImageBuf imageBufOut( getOutputImageFilename(level, 2, output).c_str(), specOut);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[2] );
 
@@ -871,13 +1038,20 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
             ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
                                  *resized[4], ROI(0, subSize, 0, 1));
         }
+
+        // corners
+        imageBufOut.setpixel( 0,0,0, corner4 );
+        imageBufOut.setpixel( size-1,0,0, corner1 );
+        imageBufOut.setpixel( size-1,size-1,0, corner0 );
+        imageBufOut.setpixel( 0,size-1,0, corner5 );
+
         imageBufOut.save();
     }
 
 
     // -y
     {
-        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
         ImageBuf imageBufOut( getOutputImageFilename(level, 3, output).c_str(), specOut);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[3] );
 
@@ -921,13 +1095,19 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
                                      span, ROI(0, subSize, subSize-1, subSize));
             }
         }
+
+        imageBufOut.setpixel( 0,0,0, corner6 );
+        imageBufOut.setpixel( size-1,0,0, corner3 );
+        imageBufOut.setpixel( size-1,size-1,0, corner2 );
+        imageBufOut.setpixel( 0,size-1,0, corner7 );
+
         imageBufOut.save();
     }
 
 
     // z
     {
-        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
         ImageBuf imageBufOut( getOutputImageFilename(level, 4, output).c_str(), specOut);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[4] );
 
@@ -961,6 +1141,13 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
             ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
                                  *resized[3], ROI(0, subSize, 0, 1));
         }
+
+
+        imageBufOut.setpixel( 0,0,0, corner5 );
+        imageBufOut.setpixel( size-1,0,0, corner0 );
+        imageBufOut.setpixel( size-1,size-1,0, corner3 );
+        imageBufOut.setpixel( 0,size-1,0, corner6 );
+
         imageBufOut.save();
     }
 
@@ -968,7 +1155,7 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
 
     // -z
     {
-        ImageSpec specOut( targetSize, targetSize, 4, TypeDesc::FLOAT );
+        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
         ImageBuf imageBufOut( getOutputImageFilename(level, 5, output).c_str(), specOut);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[5] );
 
@@ -1008,6 +1195,12 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
                                      span, ROI(0, subSize, subSize-1, subSize));
             }
         }
+
+        imageBufOut.setpixel( 0,0,0, corner1 );
+        imageBufOut.setpixel( size-1,0,0, corner4 );
+        imageBufOut.setpixel( size-1,size-1,0, corner7 );
+        imageBufOut.setpixel( 0,size-1,0, corner2 );
+
         imageBufOut.save();
     }
 
@@ -1020,5 +1213,5 @@ void fixImage(Cubemap& cm, int level, int size, const std::string& output) {
 
 void Cubemap::fixupCubeEdges( const std::string& output, int level ) {
 
-    fixImage( *this, level, this->_size, output );
+    fixImage( *this, level, output );
 }

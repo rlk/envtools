@@ -60,12 +60,13 @@ struct CubemapFloat {
     void init(int size) {
         _size = size;
         for ( int i = 0; i<6; i++)
-            _images[i] = new float[size*size*4*3];
+            _images[i] = new float[size*size*3];
     }
 
     void pack( FILE* output) {
-        for ( int i = 0; i < 6; i++ )
+        for ( int i = 0; i < 6; i++ ) {
             fwrite( _images[i], _size*_size*4*3, 1 , output );
+        }
     }
 
 };
@@ -81,12 +82,14 @@ public:
     std::map<int, CubemapFloat > _cubemapsFloat;
     std::vector<int> _keys;
     std::string _filePattern;
+    std::string _outputDirectory;
 
     int _maxLevel;
 
-    Packer(const std::string& filenamePattern, int level) {
+    Packer(const std::string& filenamePattern, int level, const std::string& outputDirectory ) {
         _filePattern = filenamePattern;
         _maxLevel = level;
+        _outputDirectory = outputDirectory;
     }
 
     void pack() {
@@ -112,18 +115,28 @@ public:
 
                 std::cout << "processing " << str << " size " << specIn.width << "x" << specIn.height << std::endl;
 
-                ImageSpec specOut(specIn.width, specIn.height, 4, TypeDesc::UINT8);
+                ImageSpec specOut(specIn.width, specIn.height, 4, TypeDesc::UINT8 );
                 specOut.attribute("oiio:UnassociatedAlpha", 1);
-                ImageBuf dst(specOut);
+                ImageBuf dst(specOut, _cubemaps[size]._images[i]);
 
 
-                ImageSpec specOutFloat(specIn.width, specIn.height, 3, TypeDesc::FLOAT);
-                ImageBuf dstFloat(specOutFloat);
+                ImageSpec specOutFloat;
+                specOutFloat.width=specIn.width;
+                specOutFloat.height=specIn.height;
+                specOutFloat.full_y=0;
+                specOutFloat.full_x=0;
+                specOutFloat.full_width = specIn.width;
+                specOutFloat.full_height = specIn.width;
+                specOutFloat.nchannels = specIn.nchannels;
+                specOutFloat.tile_height = specIn.height;
+                specOutFloat.tile_width = specIn.width;
+                specOutFloat.format = TypeDesc::FLOAT;
+                specOutFloat.attribute("oiio:ColorSpace", "Linear");
+                ImageBuf dstFloat("/tmp/test_super_debug.tif", specOutFloat, _cubemapsFloat[size]._images[i]);
 
 
-                ImageSpec spec = src.spec();
-                int width = spec.width,
-                    height = spec.height;
+                int width = specIn.width,
+                    height = specIn.height;
 
                 ImageBuf::Iterator<float, float> iteratorSrc(src, 0, width, 0, height);
                 ImageBuf::Iterator<uint8_t, uint8_t> iteratorDst(dst, 0, width, 0, height);
@@ -158,23 +171,32 @@ public:
 
                 }
 
-                if ( !dst.get_pixels( 0, size, 0, size, 0, 0, TypeDesc::UINT8, _cubemaps[size]._images[i]  ) ) {
-                    std::cerr << "error while copying pixels from " << str << std::endl;
-                }
+                dstFloat.save();
 
-                if ( !dstFloat.get_pixels( 0, size, 0, size, 0, 0, TypeDesc::FLOAT, _cubemapsFloat[size]._images[i]  ) ) {
-                    std::cerr << "error while copying pixels from " << str << std::endl;
-                }
+                ImageSpec specOutFloat2;
+                specOutFloat2.width=specIn.width;
+                specOutFloat2.height=specIn.height;
+                specOutFloat2.full_y=0;
+                specOutFloat2.full_x=0;
+                specOutFloat2.full_width = specIn.width;
+                specOutFloat2.full_height = specIn.width;
+                specOutFloat2.nchannels = specIn.nchannels;
+                specOutFloat2.tile_height = specIn.height;
+                specOutFloat2.tile_width = specIn.width;
+                specOutFloat2.format = TypeDesc::FLOAT;
+                specOutFloat2.attribute("oiio:ColorSpace", "Linear");
+                ImageBuf dstFloat2( "/tmp/test_super2_debug.tif", specOutFloat2, _cubemapsFloat[size]._images[i]);
+                dstFloat2.save();
             }
         }
 
-        FILE* output = fopen("/tmp/pack.bin", "wb");
+        FILE* output = fopen( (_outputDirectory + "/cubemap.bin").c_str(), "wb");
         for ( int i = 0; i < _keys.size(); i++ ) {
             int key = _keys[i];
             _cubemaps[key].pack(output);
         }
 
-        FILE* outputFloat = fopen("/tmp/pack_float.bin", "wb");
+        FILE* outputFloat = fopen( (_outputDirectory + "/cubemap_float.bin").c_str() , "wb");
         for ( int i = 0; i < _keys.size(); i++ ) {
             int key = _keys[i];
             _cubemapsFloat[key].pack(outputFloat);
@@ -187,7 +209,8 @@ int main(int argc, char** argv) {
 
     std::string filePattern = argv[1];
     int level = atof(argv[2]);
+    std::string outputDir = argv[3];
 
-    Packer packer( filePattern, level );
+    Packer packer( filePattern, level,  outputDir );
     packer.pack();
 }
