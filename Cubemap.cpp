@@ -719,6 +719,9 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
     int size = cm._size;
     int fixSize = 1;
 
+    // if the texture is 2 or less no need to copy edge
+    // it will be fixed with corner for tex size 2x2
+    // and we make the same pixel for all cubemap face for tex size = 1
     if ( size <= 2 ) // dont fix edge for size <= 2 need special operations
         fixSize = 0;
 
@@ -904,7 +907,16 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
 
 
     // special case for mipmap 1
-
+    // texture size = 1
+    float allFace[3]; allFace[0] = 0; allFace[1] = 0; allFace[2] = 0;
+    if ( size == 1 ) {
+        for ( int i = 0; i < 6; i++ ) {
+            float tmp[3];
+            resized[i]->getpixel( 0, 0, 0, tmp );
+            allFace[0] += tmp[0]; allFace[1] += tmp[1]; allFace[2] += tmp[2];
+        }
+        allFace[0] /= 6.0; allFace[1] /= 6.0; allFace[2] /= 6.0;
+    }
 
     // x
     {
@@ -946,6 +958,10 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
         imageBufOut.setpixel( size-1,0,0, corner1 );
         imageBufOut.setpixel( size-1,size-1,0, corner2 );
         imageBufOut.setpixel( 0,size-1,0, corner3 );
+
+        // when last mipmap level
+        if ( size == 1 )
+            imageBufOut.setpixel(0,0,0, allFace);
 
         imageBufOut.save();
     }
@@ -991,6 +1007,10 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
         imageBufOut.setpixel( size-1,0,0, corner5 );
         imageBufOut.setpixel( size-1,size-1,0, corner6 );
         imageBufOut.setpixel( 0,size-1,0, corner7 );
+
+        // when last mipmap level
+        if ( size == 1 )
+            imageBufOut.setpixel(0,0,0, allFace);
 
         imageBufOut.save();
     }
@@ -1044,6 +1064,10 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
         imageBufOut.setpixel( size-1,0,0, corner1 );
         imageBufOut.setpixel( size-1,size-1,0, corner0 );
         imageBufOut.setpixel( 0,size-1,0, corner5 );
+
+        // when last mipmap level
+        if ( size == 1 )
+            imageBufOut.setpixel(0,0,0, allFace);
 
         imageBufOut.save();
     }
@@ -1101,6 +1125,10 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
         imageBufOut.setpixel( size-1,size-1,0, corner2 );
         imageBufOut.setpixel( 0,size-1,0, corner7 );
 
+        // when last mipmap level
+        if ( size == 1 )
+            imageBufOut.setpixel(0,0,0, allFace);
+
         imageBufOut.save();
     }
 
@@ -1147,6 +1175,10 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
         imageBufOut.setpixel( size-1,0,0, corner0 );
         imageBufOut.setpixel( size-1,size-1,0, corner3 );
         imageBufOut.setpixel( 0,size-1,0, corner6 );
+
+        // when last mipmap level
+        if ( size == 1 )
+            imageBufOut.setpixel(0,0,0, allFace);
 
         imageBufOut.save();
     }
@@ -1200,6 +1232,10 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
         imageBufOut.setpixel( size-1,0,0, corner4 );
         imageBufOut.setpixel( size-1,size-1,0, corner7 );
         imageBufOut.setpixel( 0,size-1,0, corner2 );
+
+        // when last mipmap level
+        if ( size == 1 )
+            imageBufOut.setpixel(0,0,0, allFace);
 
         imageBufOut.save();
     }
