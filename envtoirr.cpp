@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstdlib>
 #include <getopt.h>
 
 #include "Cubemap"
@@ -26,14 +27,10 @@ int main(int argc, char *argv[])
 
 
     std::string input, output;
-    FixUpType fixup = FIXUP_NONE;
+    int fixup = 0;
 
     if ( fixupString == "stretch" ) {
-        fixup = CP_FIXUP_STRETCH;
-    } else if ( fixupString == "warp" ) {
-        fixup = CP_FIXUP_WARP;
-    } else if ( fixupString == "bent" ) {
-        fixup = CP_FIXUP_BENT;
+        fixup = 1;
     }
 
     if ( optind < argc - 1)

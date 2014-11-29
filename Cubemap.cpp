@@ -2,27 +2,23 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
-#include <tiffio.h>
 
 #include "Cubemap"
-#include "sRGB.h"
-#include "gray.h"
 
 #include <OpenImageIO/imageio.h>
 #include <OpenImageIO/filter.h>
 #include <OpenImageIO/imagebuf.h>
 #include <OpenImageIO/imagebufalgo.h>
+
 OIIO_NAMESPACE_USING
 
 
-#define CP_UDIR     0
-#define CP_VDIR     1
-#define CP_FACEAXIS 2
-
+void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, int fixup = 0);
 
 
 Cubemap::Cubemap()
 {
+    _size = 0;
     for ( int i = 0; i < 6; i++ ) {
         _images[i] = 0;
     }
@@ -36,11 +32,10 @@ Cubemap::~Cubemap()
     }
 }
 
-void Cubemap::init( int size, int sample, int bits)
+void Cubemap::init( int size, int sample )
 {
     _size = size;
     _samplePerPixel = sample;
-    _bitsPerSample = bits;
 
     for ( int i = 0; i < 6; i++ ) {
         if (_images[i])
@@ -166,179 +161,6 @@ void Cubemap::sample(const Vec3f& direction, Vec3f& color ) const {
     //std::cout << "face " << index << " color " << r << " " << g << " " << b << std::endl;
 }
 
-//int a_FaceIdx, float a_U, float a_V, int a_Size, Vec3f& a_XYZ, FixUpType a_FixupType
-void Cubemap::texelCoordToVect(int faceIdx, float U, float V, float* resultXYZ, FixUpType fixupType)
-{
-    float nvcU, nvcV;
-    Vec3f XYZ;
-
-    if (fixupType == CP_FIXUP_STRETCH && _size > 1)
-    {
-        // Code from Nvtt : http://code.google.com/p/nvidia-texture-tools/source/browse/trunk/src/nvtt/CubeSurface.cpp
-        // transform from [0..res - 1] to [-1 .. 1], match up edges exactly.
-        nvcU = (2.0f * (float)U / ((float)_size - 1.0f) ) - 1.0f;
-        nvcV = (2.0f * (float)V / ((float)_size - 1.0f) ) - 1.0f;
-    }
-    else
-    {
-        // Change from original AMD code
-        // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
-        // + 0.5f is for texel center addressing
-        nvcU = (2.0f * ((float)U + 0.5f) / (float)_size ) - 1.0f;
-        nvcV = (2.0f * ((float)V + 0.5f) / (float)_size ) - 1.0f;
-    }
-
-    if (fixupType == CP_FIXUP_WARP && _size > 1)
-    {
-        // Code from Nvtt : http://code.google.com/p/nvidia-texture-tools/source/browse/trunk/src/nvtt/CubeSurface.cpp
-        float a = powf(float(_size), 2.0f) / powf(float(_size - 1), 3.0f);
-        nvcU = a * powf(nvcU, 3) + nvcU;
-        nvcV = a * powf(nvcV, 3) + nvcV;
-
-        // Get current vector
-        //generate x,y,z vector (xform 2d NVC coord to 3D vector)
-        //U contribution
-        //VM_SCALE3(XYZ, CubemapFace[faceIdx][CP_UDIR], nvcU);
-        XYZ = CubemapFace[faceIdx][CP_UDIR] * nvcU;
-
-        //V contribution
-        //VM_SCALE3(tempVec, CubemapFace[faceIdx][CP_VDIR], nvcV);
-        //VM_ADD3(XYZ, tempVec, XYZ);
-        XYZ += CubemapFace[faceIdx][CP_VDIR] * nvcV;
-
-        //add face axis
-        //VM_ADD3(XYZ, CubemapFace[faceIdx][CP_FACEAXIS], XYZ);
-        XYZ += CubemapFace[faceIdx][CP_FACEAXIS];
-
-
-        //normalize vector
-        //VM_NORM3(XYZ, XYZ);
-        XYZ.normalize();
-
-    }
-    else if (fixupType == CP_FIXUP_BENT && _size > 1)
-    {
-        // Method following description of Physically based rendering slides from CEDEC2011 of TriAce
-
-        // Get vector at edge
-        Vec3f EdgeNormalU;
-        Vec3f EdgeNormalV;
-        Vec3f EdgeNormal;
-        Vec3f EdgeNormalMinusOne;
-
-        // Recover vector at edge
-        //U contribution
-        //VM_SCALE3(EdgeNormalU, CubemapFace[faceIdx][CP_UDIR], nvcU < 0.0 ? -1.0f : 1.0f);
-        EdgeNormalU = CubemapFace[faceIdx][CP_UDIR] * ( nvcU < 0.0 ? -1.0f : 1.0f);
-
-        //V contribution
-        //VM_SCALE3(EdgeNormalV, CubemapFace[faceIdx][CP_VDIR], nvcV < 0.0 ? -1.0f : 1.0f);
-        EdgeNormalV = CubemapFace[faceIdx][CP_VDIR] * (nvcV < 0.0 ? -1.0f : 1.0f);
-
-        //VM_ADD3(EdgeNormal, EdgeNormalV, EdgeNormalU);
-        EdgeNormal += EdgeNormalV;
-        EdgeNormal += EdgeNormalU;
-
-        //add face axis
-        //VM_ADD3(EdgeNormal, CubemapFace[faceIdx][CP_FACEAXIS], EdgeNormal);
-        EdgeNormal += CubemapFace[faceIdx][CP_FACEAXIS];
-
-        //normalize vector
-        //VM_NORM3(EdgeNormal, EdgeNormal);
-        EdgeNormal.normalize();
-
-        // Get vector at (edge - 1)
-        float nvcUEdgeMinus1 = (2.0f * ((float)(nvcU < 0.0f ? 0 : _size-1) + 0.5f) / (float)_size ) - 1.0f;
-        float nvcVEdgeMinus1 = (2.0f * ((float)(nvcV < 0.0f ? 0 : _size-1) + 0.5f) / (float)_size ) - 1.0f;
-
-        // Recover vector at (edge - 1)
-        //U contribution
-        //VM_SCALE3(EdgeNormalU, CubemapFace[faceIdx][CP_UDIR], nvcUEdgeMinus1);
-        EdgeNormalU = CubemapFace[faceIdx][CP_UDIR] * nvcUEdgeMinus1;
-
-        //V contribution
-        //VM_SCALE3(EdgeNormalV, CubemapFace[faceIdx][CP_VDIR], nvcVEdgeMinus1);
-        EdgeNormalV = CubemapFace[faceIdx][CP_VDIR] * nvcVEdgeMinus1;
-
-        //VM_ADD3(EdgeNormalMinusOne, EdgeNormalV, EdgeNormalU);
-        EdgeNormalMinusOne += EdgeNormalV;
-        EdgeNormalMinusOne += EdgeNormalU;
-
-        //add face axis
-        //VM_ADD3(EdgeNormalMinusOne, CubemapFace[faceIdx][CP_FACEAXIS], EdgeNormalMinusOne);
-        EdgeNormalMinusOne += CubemapFace[faceIdx][CP_FACEAXIS];
-
-        //normalize vector
-        //VM_NORM3(EdgeNormalMinusOne, EdgeNormalMinusOne);
-        EdgeNormalMinusOne.normalize();
-
-        // Get angle between the two vector (which is 50% of the two vector presented in the TriAce slide)
-        //float AngleNormalEdge = acosf(VM_DOTPROD3(EdgeNormal, EdgeNormalMinusOne));
-        float AngleNormalEdge = acosf( dot(EdgeNormal, EdgeNormalMinusOne) );
-
-        // Here we assume that high resolution required less offset than small resolution (TriAce based this on blur radius and custom value)
-        // Start to increase from 50% to 100% target angle from 128x128x6 to 1x1x6
-        float NumLevel = (logf(std::min(_size, 128))  / logf(2)) - 1;
-        AngleNormalEdge = lerp<float>(0.5f * AngleNormalEdge, AngleNormalEdge, 1.0f - (NumLevel/6.f) );
-
-        float factorU = fabs((2.0f * ((float)U) / (float)(_size - 1) ) - 1.0f);
-        float factorV = fabs((2.0f * ((float)V) / (float)(_size - 1) ) - 1.0f);
-        AngleNormalEdge = lerp<float>(0.0f, AngleNormalEdge, std::max(factorU, factorV) );
-
-        // Get current vector
-        //generate x,y,z vector (xform 2d NVC coord to 3D vector)
-        //U contribution
-        //VM_SCALE3(XYZ, CubemapFace[faceIdx][CP_UDIR], nvcU);
-        XYZ = CubemapFace[faceIdx][CP_UDIR] * nvcU;
-
-        //V contribution
-        //VM_SCALE3(tempVec, CubemapFace[faceIdx][CP_VDIR], nvcV);
-        //VM_ADD3(XYZ, tempVec, XYZ);
-        XYZ += CubemapFace[faceIdx][CP_VDIR] * nvcV;
-
-        //add face axis
-        //VM_ADD3(XYZ, CubemapFace[faceIdx][CP_FACEAXIS], XYZ);
-        XYZ += CubemapFace[faceIdx][CP_FACEAXIS];
-
-        //normalize vector
-        //VM_NORM3(XYZ, XYZ);
-        XYZ.normalize();
-
-        float RadiantAngle = AngleNormalEdge;
-        // Get angle between face normal and current normal. Used to push the normal away from face normal.
-        //float AngleFaceVector = acosf(VM_DOTPROD3(CubemapFace[faceIdx][CP_FACEAXIS], XYZ));
-        float AngleFaceVector = acosf( dot(CubemapFace[faceIdx][CP_FACEAXIS], XYZ ));
-
-        // Push the normal away from face normal by an angle of RadiantAngle
-        slerp(XYZ, CubemapFace[faceIdx][CP_FACEAXIS], XYZ, 1.0f + RadiantAngle / AngleFaceVector);
-    }
-    else
-    {
-        //generate x,y,z vector (xform 2d NVC coord to 3D vector)
-        //U contribution
-        //VM_SCALE3(XYZ, CubemapFace[faceIdx][CP_UDIR], nvcU);
-        XYZ = CubemapFace[faceIdx][CP_UDIR] * nvcU;
-
-        //V contribution
-        //VM_SCALE3(tempVec, CubemapFace[faceIdx][CP_VDIR], nvcV);
-        //VM_ADD3(XYZ, tempVec, XYZ);
-        XYZ += CubemapFace[faceIdx][CP_VDIR] * nvcV;
-
-        //add face axis
-        //VM_ADD3(XYZ, CubemapFace[faceIdx][CP_FACEAXIS], XYZ);
-        XYZ += CubemapFace[faceIdx][CP_FACEAXIS];
-
-        //normalize vector
-        //VM_NORM3(XYZ, XYZ);
-        XYZ.normalize();
-    }
-
-    resultXYZ[0] = XYZ[0];
-    resultXYZ[1] = XYZ[1];
-    resultXYZ[2] = XYZ[2];
-}
-
-
 /** Original code from Ignacio Castaño
 * This formula is from Manne Öhrström's thesis.
 * Take two coordiantes in the range [-1, 1] that define a portion of a
@@ -373,43 +195,33 @@ float Cubemap::texelCoordSolidAngle(int faceIdx, float aU, float aV)
 }
 
 
-void Cubemap::buildNormalizerSolidAngleCubemap(int size, FixUpType fixupType)
+void Cubemap::buildNormalizerSolidAngleCubemap(int size, int fixup)
 {
 
     init(size);
     int iCubeFace, u, v;
 
     //iterate over cube faces
-    for(iCubeFace=0; iCubeFace<6; iCubeFace++)
-    {
-
-        // this step is done by init upper int this function
-        //a_Surface[iCubeFace].Clear();
-        //a_Surface[iCubeFace].Init(a_Size, a_Size, 4);  //First three channels for norm cube, and last channel for solid angle
+    for (iCubeFace=0; iCubeFace<6; iCubeFace++) {
 
         //fast texture walk, build normalizer cube map
         float *texelPtr = _images[iCubeFace];
 
-        for(v=0; v < _size; v++)
-        {
-            for(u=0; u < _size; u++)
-            {
+        for(v=0; v < size; v++) {
 
-                texelCoordToVect(iCubeFace, (float)u, (float)v, texelPtr, fixupType);
+            for(u=0; u < size; u++) {
 
-                //VM_SCALE3(texelPtr, texelPtr, 0.5f);
-                //VM_BIAS3(texelPtr, texelPtr, 0.5f);
-
+                texelCoordToVect(iCubeFace, (float)u, (float)v, size, texelPtr, fixup);
                 *(texelPtr + 3) = texelCoordSolidAngle(iCubeFace, (float)u, (float)v);
-
                 texelPtr += _samplePerPixel;
+
             }
         }
     }
 }
 
 
-Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupType, int outputCubemapSize)
+Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int outputCubemapSize)
 {
     Cubemap* srcCubemap = this;
     Cubemap* dstCubemap = new Cubemap();
@@ -439,7 +251,7 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupTy
     Cubemap normCubemap = Cubemap();
 
     //Normalized vectors per cubeface and per-texel solid angle
-    normCubemap.buildNormalizerSolidAngleCubemap(srcCubemap->_size, fixupType);
+    normCubemap.buildNormalizerSolidAngleCubemap(srcCubemap->_size, fixup);
 
     const int normCubeMapNumChannels = normCubemap._samplePerPixel; // This need to be init here after the generation of m_NormCubeMap
 
@@ -466,7 +278,6 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupTy
         {
             normCubeRowStartPtr = &normCubemap._images[iFaceIdx][ normCubeMapNumChannels * (y * srcSize)];
             srcCubeRowStartPtr	= &srcCubemap->_images[iFaceIdx][ srcCubeMapNumChannels * (y * srcSize)];
-
 
             for (int x = 0; x < srcSize; x++)
             {
@@ -521,7 +332,7 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupTy
 
     //Normalized vectors per cubeface and per-texel solid angle
     //BuildNormalizerSolidAngleCubemap(DstCubeImage->m_Width, m_NormCubeMap, a_FixupType);
-    normCubemap.buildNormalizerSolidAngleCubemap(dstCubemap->_size, fixupType );
+    normCubemap.buildNormalizerSolidAngleCubemap(dstCubemap->_size, fixup );
 
 
     // dump spherical harmonics coefficient
@@ -590,121 +401,285 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, FixUpType fixupTy
 
 void Cubemap::write( const std::string& filename )
 {
+    ImageOutput* out = ImageOutput::create (filename);
 
-    TIFF* file = TIFFOpen(filename.c_str(), "w");
+    // Use Create mode for the first level.
+    ImageOutput::OpenMode appendmode = ImageOutput::Create;
 
-    if (!file)
-        return;
-
-    for ( int face = 0; face < 6; face++) {
-        TIFFSetField(file, TIFFTAG_IMAGEWIDTH,      _size);
-        TIFFSetField(file, TIFFTAG_IMAGELENGTH,     _size);
-        TIFFSetField(file, TIFFTAG_SAMPLESPERPIXEL, _samplePerPixel);
-        TIFFSetField(file, TIFFTAG_BITSPERSAMPLE,   32);
-        TIFFSetField(file, TIFFTAG_ORIENTATION,     ORIENTATION_TOPLEFT);
-        TIFFSetField(file, TIFFTAG_PLANARCONFIG,    PLANARCONFIG_CONTIG);
-        TIFFSetField(file, TIFFTAG_SAMPLEFORMAT,    SAMPLEFORMAT_IEEEFP);
-
-        if (_samplePerPixel == 1)
-        {
-            TIFFSetField(file, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_MINISBLACK);
-            TIFFSetField(file, TIFFTAG_ICCPROFILE, sizeof (grayicc), grayicc);
-        }
-        else
-        {
-            TIFFSetField(file, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_RGB);
-            TIFFSetField(file, TIFFTAG_ICCPROFILE, sizeof (sRGBicc), sRGBicc);
-        }
-
-        size_t size = (size_t) TIFFScanlineSize( file );
-
-        for (int i = 0; i < _size; ++i) {
-            uint8* start = (uint8*)_images[face];
-            TIFFWriteScanline(file, (uint8 *) start + size * i, i, 0);
-        }
-
-        TIFFWriteDirectory(file);
+    // Write the individual subimages
+    for (int s = 0;  s < 6;  ++s) {
+        ImageSpec spec( _size, _size, _samplePerPixel, TypeDesc::FLOAT);
+        out->open (filename, spec, appendmode);
+        out->write_image (TypeDesc::FLOAT, _images[s] );
+        // Use AppendSubimage mode for subsequent levels
+        appendmode = ImageOutput::AppendSubimage;
     }
-
-    TIFFClose(file);
+    out->close ();
+    delete out;
 }
 
 
 bool Cubemap::loadCubemap(const std::string& name)
 {
-    TIFF *tif;
-    tif = TIFFOpen(name.c_str(), "r");
-    if (!tif)
-        return false;
+    ImageInput* input = ImageInput::open ( name );
 
-    uint32 width;
-    uint32 height;
-    uint16 bitsPerSample;
-    uint16 samplePerPixel;
+    for ( int i = 0; i < 6; i++) {
+        ImageSpec spec;
+        input->seek_subimage(i, 0, spec );
 
-    TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE,  &bitsPerSample);
-    TIFFGetField(tif, TIFFTAG_IMAGEWIDTH,     &width);
-    TIFFGetField(tif, TIFFTAG_IMAGELENGTH,    &height);
-    TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samplePerPixel);
+        if ( !_size ) {
 
-    _size = (int) width;
-    _bitsPerSample = (int) bitsPerSample;
-    _samplePerPixel = (int) samplePerPixel;
+            if ( spec.nchannels <3 ) {
+                std::cout << "error your cubemap should have at least 3 channels" << std::endl;
+                return false;
+            }
+            init( spec.width, spec.nchannels );
+        }
 
-    std::cout << "reading cubemap environment  6 x " << width << " x " << height << " x " << _samplePerPixel << " - " << bitsPerSample << " bits" << std::endl;
-    for ( int face = 0; face < 6; ++face) {
-        loadEnvFace(tif, face);
+        if ( spec.width != spec.height && spec.width != _size ) {
+            std::cout << "Size of sub image " << i << " is not correct" << std::endl;
+            return false;
+        }
+        input->read_image( TypeDesc::FLOAT, _images[i]);
     }
-
-    TIFFClose(tif);
-
+    input->close();
+    delete input;
     return true;
 }
 
-void Cubemap::loadEnvFace(TIFF* tif, int face)
-{
-    if ( ! TIFFSetDirectory(tif, face) )
-        return;
+void Cubemap::computePrefilteredEnvironment( const std::string& output, int startSize, int startMipMap, uint nbSamples ) {
 
-    /* Confirm the parameters of the current face. */
-    uint32 w, h;
-    uint16 b, c;
+    int computeStartSize = startSize;
+    if (!computeStartSize)
+        computeStartSize = _size;
 
-    TIFFGetField(tif, TIFFTAG_IMAGEWIDTH,      &w);
-    TIFFGetField(tif, TIFFTAG_IMAGELENGTH,     &h);
-    TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &c);
-    TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE,   &b);
+    int nbMipmap = log2(computeStartSize);
+    std::cout << nbMipmap << " mipmap levels will be generated from " << computeStartSize << " x " << computeStartSize << std::endl;
 
-    if (! (w == _size && h == _size && b == _bitsPerSample && c == _samplePerPixel)) {
-        std::cerr << "can't read face " << face << std::endl;
-        return;
+    int topMipMap = nbMipmap;
+    nbMipmap -= startMipMap;
+
+    float start = 0.0;
+    float stop = 1.0;
+
+    float step = (stop-start)*1.0/float(nbMipmap);
+
+    for ( int i = 0; i < nbMipmap+1; i++ ) {
+        Cubemap cubemap;
+        float roughness = step * i;
+        int size = pow(2, topMipMap-i );
+        cubemap.init( size );
+
+        std::stringstream ss;
+        ss << output << "_" << size << "_" << roughness << ".tif";
+
+        std::cout << "compute level " << i << " with roughness " << roughness << " 6 x " << size << " x " << size << " to " << ss.str() << std::endl;
+        cubemap.computePrefilterCubemapAtLevel( roughness, *this, nbSamples);
+        cubemap.write( ss.str() );
     }
+}
 
-    _images[face] = new float[_size*_size*_samplePerPixel];
+void Cubemap::computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint nbSamples ) {
+    iterateOnFace(0, roughness, inputCubemap, nbSamples);
+    iterateOnFace(1, roughness, inputCubemap, nbSamples);
+    iterateOnFace(2, roughness, inputCubemap, nbSamples);
+    iterateOnFace(3, roughness, inputCubemap, nbSamples);
+    iterateOnFace(4, roughness, inputCubemap, nbSamples);
+    iterateOnFace(5, roughness, inputCubemap, nbSamples);
+}
 
-    /* Allocate a scanline buffer. */
-    std::vector<float> s;
-    s.resize(TIFFScanlineSize(tif));
 
-    /* Iterate over all pixels of the current cube face. */
-    for (uint32 i = 0; i < h; ++i) {
+void Cubemap::iterateOnFace( int face, float roughness, const Cubemap& cubemap, uint nbSamples ) {
 
-        if (TIFFReadScanline(tif, &s.front(), i, 0) == 1) {
+    // more the roughness is and more the solid angle is big
+    // so we want to adapt the number of sample depends on roughness
+    // eg for a cubemap a solid angle of 180 means 3 times the pixel area
+    // size*size*3 is the maximum sample
+    uint numSamples = 1 << uint(floor( log2(nbSamples ) ));
 
-            for (uint32 j = 0; j < w; ++j) {
+    if ( roughness == 0.0 )
+        numSamples = 1;
 
-                for (int k =0; k < _samplePerPixel; k++) {
-                    float p = s[ j * c + k ];
-                    _images[face][(i*w + j)*_samplePerPixel + k ] = p;
-                }
+    if ( face == 0 )
+        std::cout << "use " << numSamples << " sample for roughness " << roughness << std::endl;
+
+    int size = _size;
+
+    for ( int j = 0; j < size; j++ ) {
+        int lineIndex = j*_samplePerPixel*size;
+
+#pragma omp parallel
+#pragma omp for
+        for ( int i = 0; i < size; i++ ) {
+
+            int index = lineIndex + i*_samplePerPixel;
+            Vec3f direction;
+            texelCoordToVect( face, float(i), float(j), size, &direction[0] );
+
+            Vec3f resultColor = cubemap.prefilterEnvMap( roughness, direction, numSamples );
+
+            _images[face][ index     ] = resultColor[0];
+            _images[face][ index + 1 ] = resultColor[1];
+            _images[face][ index + 2 ] = resultColor[2];
+
+            //std::cout << "face " << face << " processing " << i << "x" << j << std::endl;
+#if 0
+            //sample( direction, resultColor );
+            Vec3f diff = (color - resultColor);
+            if ( fabs(diff[0]) > 1e-6 || fabs(diff[1]) > 1e-6 || fabs(diff[2]) > 1e-6 ) {
+                std::cout << "face " << face << " " << i << "x" << j << " color error " << diff[0] << " " << diff[1] << " " << diff[2] << std::endl;
+                std::cout << "direction " << direction[0] << " " << direction[1] << " " << direction[2]  << std::endl;
+                return;
             }
+#endif
+
         }
     }
 }
 
 
+Vec3f Cubemap::prefilterEnvMap( float roughness, const Vec3f& R, const uint numSamples2 ) const {
+    Vec3f N = R;
+    Vec3f V = R;
+    Vec3d prefilteredColor = Vec3d(0,0,0);
+
+    double totalWeight = 0;
+    Vec3f color;
+
+    Vec3f UpVector = fabs(N[2]) < 0.999 ? Vec3f(0,0,1) : Vec3f(1,0,0);
+    Vec3f TangentX = normalize( cross( UpVector, N ) );
+    Vec3f TangentY = normalize( cross( N, TangentX ) );
+
+    float a = roughness * roughness;
+    float a2min1 = (a * a) - 1.0;
+    float PI2 = 2.0 * PI;
+
+    unsigned int numSamples = numSamples2;
+
+    //for( uint p = 0; p < 3; p++ )
+        for( uint i = 0; i < numSamples; i++ ) {
+            Vec2f Xi = hammersley( i, numSamples );
+
+            // importance sampling
+            float Phi = PI2 * Xi[0];
+            float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + a2min1 * Xi[1] ) );
+            float SinTheta = sqrt( 1.0 - std::min(1.0f, CosTheta * CosTheta ) );
+            Vec3f H;
+            H[0] = SinTheta * cos( Phi );
+            H[1] = SinTheta * sin( Phi );
+            H[2] = CosTheta;
+
+            // Tangent to world space
+            H =  TangentX * H[0] + TangentY * H[1] + N * H[2];
+
+            //Vec3f H = importanceSampleGGX( Xi, roughness, N, TangentX, TangentY );
+
+            Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
+            float NoL = saturate( dot( N, L ) );
+
+            if( NoL > 0.0 ) {
+                getSample( L, color );
+                prefilteredColor += Vec3d( color * NoL );
+                totalWeight += NoL;
+            }
+        }
+
+    return prefilteredColor / totalWeight;
+}
 
 
+
+void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, int fixup) {
+
+    float u,v;
+
+    if ( fixup ) {
+        // Code from Nvtt : http://code.google.com/p/nvidia-texture-tools/source/browse/trunk/src/nvtt/CubeSurface.cpp
+
+        // transform from [0..res - 1] to [-1 .. 1], match up edges exactly.
+        u = (2.0f * ui / (size - 1.0f) ) - 1.0f;
+        v = (2.0f * vi / (size - 1.0f) ) - 1.0f;
+
+    } else {
+
+        // center ray on texel center
+        // generate a vector for each texel
+        u = (2.0f * (ui + 0.5f) / size ) - 1.0f;
+        v = (2.0f * (vi + 0.5f) / size ) - 1.0f;
+
+    }
+
+    Vec3f vecX = CubemapFace[face][0] * u;
+    Vec3f vecY = CubemapFace[face][1] * v;
+    Vec3f vecZ = CubemapFace[face][2];
+    Vec3f res = Vec3f( vecX + vecY + vecZ );
+    res.normalize();
+    dirResult[0] = res[0];
+    dirResult[1] = res[1];
+    dirResult[2] = res[2];
+}
+
+void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u, float& v) {
+
+    int bestAxis = 0;
+    if ( fabs(direction[1]) > fabs(direction[0]) ) {
+        bestAxis = 1;
+        if ( fabs(direction[2]) > fabs(direction[1]) )
+            bestAxis = 2;
+    } else if ( fabs(direction[2]) > fabs(direction[0]) )
+        bestAxis = 2;
+
+    // select the index of cubemap face
+    faceIndex = bestAxis*2 + ( direction[bestAxis] > 0 ? 0 : 1 );
+    float bestAxisValue = direction[bestAxis];
+    float denom = fabs( bestAxisValue );
+
+    //float maInv = 1.0/denom;
+    Vec3f dir = direction * 1.0/denom;
+
+    float sc = CubemapFace[faceIndex][0] * dir;
+    float tc = CubemapFace[faceIndex][1] * dir;
+    float ppx = (sc + 1.0) * 0.5 * (size - 1); // width == height
+    float ppy = (tc + 1.0) * 0.5 * (size - 1); // width == height
+
+    // u = int( floor( ppx ) ); // center pixel
+    // v = int( floor( ppy ) ); // center pixel
+    u = ppx;
+    v = ppy;
+
+}
+
+void Cubemap::getSample(const Vec3f& direction, Vec3f& color ) const {
+
+    float u,v;
+    int faceIndex;
+
+    int size = _size;
+    vectToTexelCoord(direction, size, faceIndex, u,v );
+
+    const float ii = clamp(u - 0.5f, 0.0f, size - 1.0f);
+    const float jj = clamp(v - 0.5f, 0.0f, size - 1.0f);
+
+    const long  i0 = lrintf(floorf(ii)), i1 = lrintf(ceilf(ii));
+    const long  j0 = lrintf(floorf(jj)), j1 = lrintf(ceilf(jj));
+
+    const float di = ii - i0;
+    const float dj = jj - j0;
+
+
+    // for ( int i = 0; i < 3; i++ )
+    //     color[i] = lerp( lerp( _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel + i  ],
+    //                             _images[ faceIndex ][ ( j0 * size + i1 ) * _samplePerPixel + i  ], di ),
+    //                       lerp( _images[ faceIndex ][ ( j1 * size + i0 ) * _samplePerPixel + i  ],
+    //                             _images[ faceIndex ][ ( j1 * size + i1 ) * _samplePerPixel + i  ], di ), dj );
+
+    color[0] = _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel     ];
+    color[1] = _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel + 1 ];
+    color[2] = _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel + 2 ];
+
+
+    //std::cout << "face " << index << " color " << r << " " << g << " " << b << std::endl;
+}
 
 
 std::string getOutputImageFilename(int level, int index, const std::string& output) {
@@ -712,6 +687,7 @@ std::string getOutputImageFilename(int level, int index, const std::string& outp
     ss << output << "fixup_" << level << "_" << index << ".tif";
     return ss.str();
 }
+
 
 void fixImage(Cubemap& cm, int level, const std::string& output) {
 
@@ -744,7 +720,11 @@ void fixImage(Cubemap& cm, int level, const std::string& output) {
         ImageSpec specRGB( size, size, 3, TypeDesc::FLOAT );
         specRGB.attribute("oiio:ColorSpace", "Linear");
         ImageBuf* RGB = new ImageBuf( specRGB );
-        ImageBufAlgo::channels (*RGB, imageOriginal, 3, NULL /*default ordering*/);
+        int channel = 3;
+        int* t0 = 0;
+        float* t1 = 0;
+        std::string* t2 = 0;
+        ImageBufAlgo::channels (*RGB, imageOriginal, channel, t0, t1, t2, false);
 
         ImageSpec specResize( sizeWithoutBorder, sizeWithoutBorder, 3, TypeDesc::FLOAT );
         specResize.attribute("oiio:ColorSpace", "Linear");

@@ -481,6 +481,9 @@ class Vec3d
         /** Constructor that sets all components of the vector to zero */
         Vec3d() { _v[0]=0.0; _v[1]=0.0; _v[2]=0.0;}
 
+        /** Constructor that sets all components of the vector to zero */
+        Vec3d(const Vec3f& v ) { _v[0]=v[0]; _v[1]=v[1]; _v[2]=v[2];}
+
         inline operator Vec3f() const { return Vec3f(static_cast<float>(_v[0]),static_cast<float>(_v[1]),static_cast<float>(_v[2]));}
 
         Vec3d(value_type x,value_type y,value_type z) { _v[0]=x; _v[1]=y; _v[2]=z; }
@@ -692,6 +695,26 @@ inline Vec2d hammersley(unsigned int i, unsigned int N) {
     return Vec2d(double(i)/double(N), radicalInverse_VdC(i));
 }
 
+
+inline Vec2f hammersley2(unsigned int originalSample, unsigned int exp )
+{
+    unsigned int revertSample;
+    float expInverse = 1.0/ float( ( 1 << exp ) - 1 );
+
+    // Revert bits by swapping blockwise. Lower bits are moved up and higher bits down.
+    revertSample = (originalSample << 16u) | (originalSample >> 16u);
+    revertSample = ((revertSample & 0x00ff00ffu) << 8u) | ((revertSample & 0xff00ff00u) >> 8u);
+    revertSample = ((revertSample & 0x0f0f0f0fu) << 4u) | ((revertSample & 0xf0f0f0f0u) >> 4u);
+    revertSample = ((revertSample & 0x33333333u) << 2u) | ((revertSample & 0xccccccccu) >> 2u);
+    revertSample = ((revertSample & 0x55555555u) << 1u) | ((revertSample & 0xaaaaaaaau) >> 1u);
+
+    // Shift back, as only m bits are used.
+    revertSample = revertSample >> (32 - exp );
+
+    return Vec2f(float(revertSample) * expInverse, float(originalSample) * expInverse);
+}
+
+
 template <typename T>
 inline T cross( const T& a, const T& b ) {
     return a^b;
@@ -711,19 +734,17 @@ template<typename T>
 inline T saturate(T v) { return v<0.0?0.0:v>1.0?1.0:v; }
 
 
-inline Vec3d importanceSampleGGX( Vec2d Xi, float roughness, Vec3d N )
+inline Vec3f importanceSampleGGX( const Vec2f& Xi, float roughness, const Vec3f& N, const Vec3f& TangentX, const Vec3f& TangentY )
 {
     float a = roughness * roughness;
     float Phi = 2.0 * PI * Xi[0];
     float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + (a*a - 1.0) * Xi[1] ) );
     float SinTheta = sqrt( 1.0 - CosTheta * CosTheta );
-    Vec3d H;
+    Vec3f H;
     H[0] = SinTheta * cos( Phi );
     H[1] = SinTheta * sin( Phi );
     H[2] = CosTheta;
-    Vec3d UpVector = fabs(N[2]) < 0.999 ? Vec3d(0,0,1) : Vec3d(1,0,0);
-    Vec3d TangentX = normalize( cross( UpVector, N ) );
-    Vec3d TangentY = cross( N, TangentX );
+
 // Tangent to world space
     return TangentX * H[0] + TangentY * H[1] + N * H[2];
 }

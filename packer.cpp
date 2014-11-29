@@ -3,8 +3,6 @@
 #include <limits>
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
-#include <cstdint>
 #include <cstdio>
 
 #include <OpenImageIO/imageio.h>
