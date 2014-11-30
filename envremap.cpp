@@ -163,7 +163,7 @@ int TIFFReadFloatScanline(TIFF *T, float *dst, uint32 r)
         if (len != TIFFScanlineSize(T))
         {
             len  = TIFFScanlineSize(T);
-            src  = realloc(src, len);
+            src  = (void**)realloc(src, len);
         }
 
         if (src && TIFFReadScanline(T, src, r, 0) > 0)
@@ -220,7 +220,7 @@ int TIFFWriteFloatScanline(TIFF *T, float *src, uint32 r)
         if (len != TIFFScanlineSize(T))
         {
             len  = TIFFScanlineSize(T);
-            dst  = realloc(dst, len);
+            dst  = (void**)realloc(dst, len);
         }
 
         if (dst)

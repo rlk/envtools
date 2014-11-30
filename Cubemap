@@ -53,6 +53,9 @@ struct Cubemap {
     Vec3f prefilterEnvMap( float roughness, const Vec3f& R, uint numSamples ) const;
     void getSample(const Vec3f& direction, Vec3f& color ) const;
 
+    Cubemap* makeSeamless() const;
+
+
 };
 
 #endif

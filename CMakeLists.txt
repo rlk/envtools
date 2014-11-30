@@ -41,20 +41,20 @@ find_package(OpenImageIO)
 include_directories(${OIIO_INCLUDE_DIR})
 include_directories( ${TIFF_INCLUDE_DIR} )
 
-add_executable(envremap envremap.c)
+add_executable(envremap envremap.cpp)
 target_link_libraries(envremap ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} )
 
-add_executable(envtoirr envtoirr.cpp Cubemap.cpp )
-target_link_libraries(envtoirr ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+add_executable(envIrradiance envIrradiance.cpp Cubemap.cpp )
+target_link_libraries(envIrradiance ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
-add_executable(fixedge fixEdge.cpp  Cubemap.cpp)
-target_link_libraries(fixedge ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+add_executable(seamlessCubemap seamlessCubemap.cpp  Cubemap.cpp)
+target_link_libraries(seamlessCubemap ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 add_executable(packer packer.cpp)
 target_link_libraries(packer ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 add_executable(envPrefilter envPrefilter.cpp Cubemap.cpp)
-target_link_libraries(envPrefilter ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+target_link_libraries(envPrefilter ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 add_executable(envBRDF envBRDF.cpp)
 #target_link_libraries( envBRDF )
