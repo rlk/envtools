@@ -9,6 +9,7 @@
 #include <OpenImageIO/filter.h>
 #include <OpenImageIO/imagebuf.h>
 #include <OpenImageIO/imagebufalgo.h>
+#include "Cubemap"
 
 OIIO_NAMESPACE_USING
 
@@ -97,21 +98,24 @@ public:
         for ( int level = 0 ; level < _maxLevel + 1; level++) {
             int size = int( pow(2,_maxLevel-level) );
             _keys.push_back( size );
+
             _cubemaps[size].init(size);
             _cubemapsFloat[size].init(size);
 
-            std::cout << "processing size level " << level << " size " << size << std::endl;
+            std::cout << "packing level " << level << " size " << size << std::endl;
+
+            int strSize = snprintf( str, 255, _filePattern.c_str(), level );
+            str[strSize+1] = 0;
+
+            Cubemap cm;
+            cm.loadCubemap(str);
 
             for ( int i = 0 ; i < 6; i++ ) {
 
-                int strSize = snprintf( str, 255, _filePattern.c_str(), level, i );
-                str[strSize+1] = 0;
+                ImageSpec specIn(cm._size, cm._size, cm._samplePerPixel, TypeDesc::FLOAT);
+                ImageBuf src(specIn, cm._images[i]);
 
-                ImageBuf src(str);
-                src.read();
-                ImageSpec specIn = src.spec();
-
-                std::cout << "processing " << str << " size " << specIn.width << "x" << specIn.height << std::endl;
+                //std::cout << "processing " << str << " size " << specIn.width << "x" << specIn.height << std::endl;
 
                 ImageSpec specOut(specIn.width, specIn.height, 4, TypeDesc::UINT8 );
                 specOut.attribute("oiio:UnassociatedAlpha", 1);
@@ -188,13 +192,13 @@ public:
             }
         }
 
-        FILE* output = fopen( (_outputDirectory + "/cubemap.bin").c_str(), "wb");
+        FILE* output = fopen( (_outputDirectory + "_rgbe.bin").c_str(), "wb");
         for ( int i = 0; i < _keys.size(); i++ ) {
             int key = _keys[i];
             _cubemaps[key].pack(output);
         }
 
-        FILE* outputFloat = fopen( (_outputDirectory + "/cubemap_float.bin").c_str() , "wb");
+        FILE* outputFloat = fopen( (_outputDirectory + "_float.bin").c_str() , "wb");
         for ( int i = 0; i < _keys.size(); i++ ) {
             int key = _keys[i];
             _cubemapsFloat[key].pack(outputFloat);

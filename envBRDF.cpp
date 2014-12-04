@@ -7,9 +7,10 @@
 #include "Math"
 
 typedef unsigned char ubyte;
+typedef unsigned int uint;
 
 
-inline void convertVec2ToUintsetRGB(ubyte* ptr, const Vec2d& val)
+inline void convertVec2ToUintsetRGB(ubyte* ptr, const Vec2f& val)
 {
     unsigned int A = floor(val[0]*65535);
     unsigned int B = floor(val[1]*65535);
@@ -51,28 +52,30 @@ inline void convertVec2ToUintsetRGB(ubyte* ptr, const Vec2d& val)
 struct RougnessNoVLUT {
 
     int _size;
-    Vec2d* _lut;
+    Vec2f* _lut;
     double _maxValue;
+    uint _nbSamples;
 
-    RougnessNoVLUT( int size ) {
+    RougnessNoVLUT( int size, uint samples = 1024 ) {
         _size = size;
-        _lut = new Vec2d[size*size];
+        _lut = new Vec2f[size*size];
         _maxValue = 0.0;
+        _nbSamples = samples;
     }
 
     // w is either Ln or Vn
-    double G1_Schlick( double ndw, double k ) {
+    float G1_Schlick( float ndw, float k ) {
         // One generic factor of the geometry function divided by ndw
         // NB : We should have k > 0
         return 1.0 / ( ndw*(1.0-k) + k );
     }
 
-    double G_Schlick( double ndv,double ndl,double roughness) {
+    float G_Schlick( float ndv,float ndl,float roughness) {
         // Schlick with Smith-like choice of k
         // cf http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf p3
-        double k = roughness * roughness * 0.5;
-        double G1_ndl = G1_Schlick(ndl,k);
-        double G1_ndv = G1_Schlick(ndv,k);
+        float k = roughness * roughness * 0.5;
+        float G1_ndl = G1_Schlick(ndl,k);
+        float G1_ndv = G1_Schlick(ndv,k);
         return ndv * ndl * G1_ndl * G1_ndv;
     }
 
@@ -88,7 +91,7 @@ struct RougnessNoVLUT {
         V[2] = NoV; // cos
 
 
-        Vec3f N = Vec3d(0,0,1); // dont know where the normal comes from
+        Vec3f N = Vec3f(0,0,1); // dont know where the normal comes from
         // but if the view vector is generated from NoV then the normal should be fixed
         // and 0,0,1
 
@@ -131,7 +134,8 @@ struct RougnessNoVLUT {
 
         float step = 1.0/float(_size);
 
-        const int numSamples = 1024*16;
+        uint numSamples = pow(2, uint(floor(log2(_nbSamples) )));
+
         // const uint numSamples2 = 1024*32;
         // double maxError = -1.0;
 
@@ -142,7 +146,7 @@ struct RougnessNoVLUT {
             float roughness = step * ( j + 0.5 );
             for ( int i = 0 ; i < _size; i++) {
                 float NoV = step * (i + 0.5);
-                Vec2d values = integrateBRDF( roughness, NoV, numSamples);
+                Vec2f values = integrateBRDF( roughness, NoV, numSamples);
 #if 0
                 // Vec2d values2 = integrateBRDF( roughness, NoV, numSamples2);
 
@@ -161,7 +165,7 @@ struct RougnessNoVLUT {
         writeImage(filename.c_str(), _size, _size, _lut );
     }
 
-    int writeImage(const char* filename, int width, int height, Vec2d *buffer)
+    int writeImage(const char* filename, int width, int height, Vec2f *buffer)
     {
         ubyte* data = new ubyte[width*height*4];
         for ( int i = 0; i < width*height; i++ )
@@ -186,12 +190,14 @@ int main(int argc, char *argv[])
 {
 
     int size = 0;
+    uint samples = 1024;
     int c;
 
-    while ((c = getopt(argc, argv, "s")) != -1)
+    while ((c = getopt(argc, argv, "s:n:")) != -1)
         switch (c)
         {
         case 's': size = atof(optarg);       break;
+        case 'n': samples = atof(optarg);       break;
 
         default: return usage(argv[0]);
         }

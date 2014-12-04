@@ -36,7 +36,6 @@ struct Cubemap {
     void write( const std::string& filename );
     void sample(const Vec3f& direction, Vec3f& color ) const;
 
-    void loadEnvFace(TIFF* tif, int face);
     bool loadCubemap(const std::string& name);
 
     void buildNormalizerSolidAngleCubemap(int size, int fixupType);

@@ -198,7 +198,7 @@ float Cubemap::texelCoordSolidAngle(int faceIdx, float aU, float aV)
 void Cubemap::buildNormalizerSolidAngleCubemap(int size, int fixup)
 {
 
-    init(size);
+    init(size, 4);
     int iCubeFace, u, v;
 
     //iterate over cube faces
@@ -471,9 +471,9 @@ void Cubemap::computePrefilteredEnvironment( const std::string& output, int star
         cubemap.init( size );
 
         std::stringstream ss;
-        ss << output << "_" << size << "_" << roughness << ".tif";
+        ss << output << "_" << size << ".tif";
 
-        std::cout << "compute level " << i << " with roughness " << roughness << " 6 x " << size << " x " << size << " to " << ss.str() << std::endl;
+        std::cout << "compute level " << i << " with roughness " << roughness << " " << size << " x " << size << " to " << ss.str();
         cubemap.computePrefilterCubemapAtLevel( roughness, *this, nbSamples);
         cubemap.write( ss.str() );
     }
@@ -501,7 +501,7 @@ void Cubemap::iterateOnFace( int face, float roughness, const Cubemap& cubemap, 
         numSamples = 1;
 
     if ( face == 0 )
-        std::cout << "use " << numSamples << " sample for roughness " << roughness << std::endl;
+        std::cout << " " << numSamples << " samples" << std::endl;
 
     int size = _size;
 
