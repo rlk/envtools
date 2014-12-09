@@ -137,6 +137,11 @@ struct PanoramaRGBA8 {
         fwrite( _image, _size*_size/2*4, 1 , output );
     }
 
+    void fillBlank() {
+        memset( _image, 0, _size*_size/2*4 );
+    }
+
+
 };
 
 
@@ -162,7 +167,7 @@ public:
 
     void write(MapPanorama8& panorama, const std::string& file) {
 
-        uint size = panorama[0]._size;
+        uint size = _keys[0];
         uint8_t* buffer = new uint8_t[size*size*4];
         ImageSpec spec(size, size, 4, TypeDesc::UINT8 );
         ImageBuf out( spec, buffer );
@@ -201,11 +206,18 @@ public:
 
             std::cout << "packing level " << level << " size " << size << std::endl;
 
-            int strSize = snprintf( str, 255, _filePattern.c_str(), level );
+            int strSize = snprintf( str, 255, _filePattern.c_str(), size );
             str[strSize+1] = 0;
 
             ImageBuf src ( str );
-            src.read();
+
+            if ( !src.read() ) {
+                _RGBE[size].fillBlank();
+                _RGBM[size].fillBlank();
+                _LUV[size].fillBlank();
+                continue;
+            }
+
 
             const ImageSpec& specIn( src.spec() );
 

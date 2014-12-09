@@ -57,13 +57,6 @@ add_executable(envPrefilter envPrefilter.cpp Cubemap.cpp)
 target_link_libraries(envPrefilter ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 add_executable(envBRDF envBRDF.cpp)
-#target_link_libraries( envBRDF )
 
-
-
-
-# use the prefilter technic from UE4 but I think
-# but something wrong with the rendering, so I keep it if I want to
-# debug or update it later
-#add_executable(envtospecular envtospecular.cpp)
-#target_link_libraries(envtospecular ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} )
+add_executable(panoramaPacker panoramaPacker.cpp)
+target_link_libraries(panoramaPacker ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
