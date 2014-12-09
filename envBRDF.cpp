@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cmath>
 #include <string>
 #include <cstdlib>
 #include <cstdio>
@@ -12,8 +13,8 @@ typedef unsigned int uint;
 
 inline void convertVec2ToUintsetRGB(ubyte* ptr, const Vec2f& val)
 {
-    unsigned int A = floor(val[0]*65535);
-    unsigned int B = floor(val[1]*65535);
+    unsigned int A = uint(val[0]*65535 + 0.5); // + 0.5 I guess to avoid 0
+    unsigned int B = uint(val[1]*65535 + 0.5); //
 
     ubyte v1 = (ubyte)(A >> 8 & 0xFF);
     ubyte v0 = (ubyte)A & 0xFF;
@@ -70,14 +71,14 @@ struct RougnessNoVLUT {
         return 1.0 / ( ndw*(1.0-k) + k );
     }
 
-    float G_Schlick( float ndv,float ndl,float roughness) {
+    float G_Schlick( float ndv,float ndl,float k) {
         // Schlick with Smith-like choice of k
         // cf http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf p3
-        float k = roughness * roughness * 0.5;
         float G1_ndl = G1_Schlick(ndl,k);
         float G1_ndv = G1_Schlick(ndv,k);
         return ndv * ndl * G1_ndl * G1_ndv;
     }
+
 
 
     // http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
@@ -102,18 +103,21 @@ struct RougnessNoVLUT {
         Vec3f TangentX = normalize( cross( UpVector, N ) );
         Vec3f TangentY = normalize( cross( N, TangentX ) );
 
+        float m = roughness*roughness;
+        float k = m * 0.5;
+
         for( int i = 0; i < numSamples; i++ ) {
 
             Vec2f Xi = hammersley( i, numSamples );
             Vec3f H = importanceSampleGGX( Xi, roughness, N, TangentX, TangentY );
-            Vec3f L =  H * dot( V, H ) * 2.0 - V;
+            Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
 
             float NoL = saturate( L[2] );
             float NoH = saturate( H[2] );
             float VoH = saturate( V*H );
 
             if( NoL > 0.0 ) {
-                float G = G_Schlick( NoV, NoL, roughness );
+                float G = G_Schlick( NoV, NoL, k );
                 float G_Vis = G * VoH / (NoH * NoV);
 
                 float Fc = pow( 1.0 - VoH, 5 );
@@ -124,7 +128,7 @@ struct RougnessNoVLUT {
         A /= numSamples;
         B /= numSamples;
 
-        return Vec2f( A, B );
+        return Vec2f( clampTo(A,0.0,1.0) , clampTo(B,0.0,1.0) );
     }
 
 
@@ -158,7 +162,7 @@ struct RougnessNoVLUT {
                 maxError = std::max( diff1, maxError);
                 maxError = std::max( diff0, maxError);
 #endif
-                _lut[ i + j*_size ] = values;
+                _lut[ j + i*_size ] = values;
             }
         }
 //        std::cout <<"max error " << maxError << std::endl;

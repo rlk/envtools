@@ -44,6 +44,32 @@ void Cubemap::init( int size, int sample )
     }
 }
 
+void Cubemap::fill( const Vec4f& fill )
+{
+    for ( int i = 0; i < 6; i++ ) {
+        if (_images[i]) {
+
+            if ( _samplePerPixel > 3 ) {
+                for ( int j = 0; j < _size*_size; j += _samplePerPixel ) {
+                    _images[i][j] = fill[0];
+                    _images[i][j+1] = fill[1];
+                    _images[i][j+2] = fill[2];
+                    _images[i][j+3] = fill[3];
+                }
+
+            } else {
+
+                for ( int j = 0; j < _size*_size; j += _samplePerPixel ) {
+                    _images[i][j] = fill[0];
+                    _images[i][j+1] = fill[1];
+                    _images[i][j+2] = fill[2];
+                }
+
+            }
+        }
+    }
+}
+
 
 
 // SH order use for approximation of irradiance cubemap is 5, mean 5*5 equals 25 coefficients
@@ -447,36 +473,41 @@ bool Cubemap::loadCubemap(const std::string& name)
     return true;
 }
 
-void Cubemap::computePrefilteredEnvironment( const std::string& output, int startSize, int startMipMap, uint nbSamples ) {
+void Cubemap::computePrefilteredEnvironment( const std::string& output, int startSize, int endSize, uint nbSamples ) {
 
     int computeStartSize = startSize;
     if (!computeStartSize)
         computeStartSize = _size;
 
-    int nbMipmap = log2(computeStartSize);
-    std::cout << nbMipmap << " mipmap levels will be generated from " << computeStartSize << " x " << computeStartSize << std::endl;
+    int totalMipmap = log2(computeStartSize);
+    int endMipMap = totalMipmap - log2( endSize );
 
-    int topMipMap = nbMipmap;
-    nbMipmap -= startMipMap;
+    std::cout << endMipMap + 1 << " mipmap levels will be generated from " << computeStartSize << " x " << computeStartSize << " to " << endSize << " x " << endSize << std::endl;
 
     float start = 0.0;
     float stop = 1.0;
 
-    float step = (stop-start)*1.0/float(nbMipmap);
+    float step = (stop-start)*1.0/float(endMipMap);
 
-    for ( int i = 0; i < nbMipmap+1; i++ ) {
+    for ( int i = 0; i < totalMipmap+1; i++ ) {
         Cubemap cubemap;
         float roughness = step * i;
-        int size = pow(2, topMipMap-i );
+        int size = pow(2, totalMipmap-i );
         cubemap.init( size );
 
         std::stringstream ss;
         ss << output << "_" << size << ".tif";
 
-        std::cout << "compute level " << i << " with roughness " << roughness << " " << size << " x " << size << " to " << ss.str();
-        cubemap.computePrefilterCubemapAtLevel( roughness, *this, nbSamples);
+        // generate debug color cubemap after limit size
+        if ( i <= endMipMap ) {
+            std::cout << "compute level " << i << " with roughness " << roughness << " " << size << " x " << size << " to " << ss.str();
+            cubemap.computePrefilterCubemapAtLevel( roughness, *this, nbSamples);
+        } else {
+            cubemap.fill(Vec4f(1.0,0.0,1.0,1.0));
+        }
         cubemap.write( ss.str() );
     }
+
 }
 
 void Cubemap::computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint nbSamples ) {

@@ -32,6 +32,7 @@ struct Cubemap {
     Cubemap();
     ~Cubemap();
 
+    void fill( const Vec4f& value );
     void init( int size, int sample = 3);
     void write( const std::string& filename );
     void sample(const Vec3f& direction, Vec3f& color ) const;
