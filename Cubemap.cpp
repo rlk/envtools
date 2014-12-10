@@ -602,10 +602,10 @@ Vec3f Cubemap::prefilterEnvMap( float roughness, const Vec3f& R, const uint numS
 
             // Tangent to world space
             H =  TangentX * H[0] + TangentY * H[1] + N * H[2];
-
-            //Vec3f H = importanceSampleGGX( Xi, roughness, N, TangentX, TangentY );
+            H.normalize();
 
             Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
+            L.normalize();
             float NoL = saturate( dot( N, L ) );
 
             if( NoL > 0.0 ) {
