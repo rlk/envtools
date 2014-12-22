@@ -14,7 +14,7 @@ OIIO_NAMESPACE_USING
 
 
 void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, int fixup = 0);
-
+void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u, float& v);
 
 Cubemap::Cubemap()
 {
@@ -491,7 +491,12 @@ void Cubemap::computePrefilteredEnvironment( const std::string& output, int star
 
     for ( int i = 0; i < totalMipmap+1; i++ ) {
         Cubemap cubemap;
-        float roughness = step * i;
+
+        // frostbite, lagarde paper p67
+        // http://www.frostbite.com/wp-content/uploads/2014/11/course_notes_moving_frostbite_to_pbr.pdf
+        float r = step * i;
+        float roughnessLinear = r; //pow(r,1.5);
+
         int size = pow(2, totalMipmap-i );
         cubemap.init( size );
 
@@ -500,27 +505,26 @@ void Cubemap::computePrefilteredEnvironment( const std::string& output, int star
 
         // generate debug color cubemap after limit size
         if ( i <= endMipMap ) {
-            std::cout << "compute level " << i << " with roughness " << roughness << " " << size << " x " << size << " to " << ss.str();
-            cubemap.computePrefilterCubemapAtLevel( roughness, *this, nbSamples);
+            std::cout << "compute level " << i << " with roughness " << roughnessLinear << " " << size << " x " << size << " to " << ss.str();
+            cubemap.computePrefilterCubemapAtLevel( roughnessLinear, *this, nbSamples);
         } else {
             cubemap.fill(Vec4f(1.0,0.0,1.0,1.0));
         }
         cubemap.write( ss.str() );
     }
-
 }
 
-void Cubemap::computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint nbSamples ) {
-    iterateOnFace(0, roughness, inputCubemap, nbSamples);
-    iterateOnFace(1, roughness, inputCubemap, nbSamples);
-    iterateOnFace(2, roughness, inputCubemap, nbSamples);
-    iterateOnFace(3, roughness, inputCubemap, nbSamples);
-    iterateOnFace(4, roughness, inputCubemap, nbSamples);
-    iterateOnFace(5, roughness, inputCubemap, nbSamples);
+void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubemap& inputCubemap, uint nbSamples ) {
+    iterateOnFace(0, roughnessLinear, inputCubemap, nbSamples);
+    iterateOnFace(1, roughnessLinear, inputCubemap, nbSamples);
+    iterateOnFace(2, roughnessLinear, inputCubemap, nbSamples);
+    iterateOnFace(3, roughnessLinear, inputCubemap, nbSamples);
+    iterateOnFace(4, roughnessLinear, inputCubemap, nbSamples);
+    iterateOnFace(5, roughnessLinear, inputCubemap, nbSamples);
 }
 
 
-void Cubemap::iterateOnFace( int face, float roughness, const Cubemap& cubemap, uint nbSamples ) {
+void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples ) {
 
     // more the roughness is and more the solid angle is big
     // so we want to adapt the number of sample depends on roughness
@@ -528,7 +532,7 @@ void Cubemap::iterateOnFace( int face, float roughness, const Cubemap& cubemap, 
     // size*size*3 is the maximum sample
     uint numSamples = 1 << uint(floor( log2(nbSamples ) ));
 
-    if ( roughness == 0.0 )
+    if ( roughnessLinear == 0.0 )
         numSamples = 1;
 
     if ( face == 0 )
@@ -545,9 +549,44 @@ void Cubemap::iterateOnFace( int face, float roughness, const Cubemap& cubemap, 
 
             int index = lineIndex + i*_samplePerPixel;
             Vec3f direction;
+
             texelCoordToVect( face, float(i), float(j), size, &direction[0] );
 
-            Vec3f resultColor = cubemap.prefilterEnvMap( roughness, direction, numSamples );
+#if 0
+            int faceIndex = -1;
+            float u , v;
+            vectToTexelCoord(direction, cubemap._size, faceIndex, u,v );
+            // std::cout << "u: " << u << " " << float(i) << " " << cubemap._size << std::endl;
+            // std::cout << "v: " << v << " " << float(j) << " " << cubemap._size << std::endl;
+
+            Vec3f c0;
+            cubemap.getSample(direction, c0);
+            const float* ptr = &cubemap._images[face][j*_samplePerPixel*cubemap._size + i*_samplePerPixel];
+            // std::cout << "r: " << ptr[0] << " " << c0[0] << std::endl;
+            // std::cout << "g: " << ptr[1] << " " << c0[1] << std::endl;
+            // std::cout << "b: " << ptr[2] << " " << c0[2] << std::endl;
+
+            if ( !(ptr[0] == c0[0]) ||
+                 !(ptr[1] == c0[1]) ||
+                 !(ptr[2] == c0[2]) ) {
+                std::cout << "face: " << face << " " << faceIndex << std::endl;
+                std::cout << "u: " << u << " " << float(i) << " " << cubemap._size << std::endl;
+                std::cout << "v: " << v << " " << float(j) << " " << cubemap._size << std::endl;
+
+                std::cout << "r: " << ptr[0] << " " << c0[0] << std::endl;
+                std::cout << "g: " << ptr[1] << " " << c0[1] << std::endl;
+                std::cout << "b: " << ptr[2] << " " << c0[2] << std::endl;
+
+            }
+            assert ( ptr[0] == c0[0] );
+            assert ( ptr[1] == c0[1] );
+            assert ( ptr[2] == c0[2] );
+            // assert( u == float(i) );
+            // assert( v == float(j) );
+            // assert( faceIndex == face );
+
+#endif
+            Vec3f resultColor = cubemap.prefilterEnvMap( roughnessLinear, direction, numSamples );
 
             _images[face][ index     ] = resultColor[0];
             _images[face][ index + 1 ] = resultColor[1];
@@ -569,7 +608,7 @@ void Cubemap::iterateOnFace( int face, float roughness, const Cubemap& cubemap, 
 }
 
 
-Vec3f Cubemap::prefilterEnvMap( float roughness, const Vec3f& R, const uint numSamples2 ) const {
+Vec3f Cubemap::prefilterEnvMap( float roughnessLinear, const Vec3f& R, const uint numSamples2 ) const {
     Vec3f N = R;
     Vec3f V = R;
     Vec3d prefilteredColor = Vec3d(0,0,0);
@@ -581,10 +620,6 @@ Vec3f Cubemap::prefilterEnvMap( float roughness, const Vec3f& R, const uint numS
     Vec3f TangentX = normalize( cross( UpVector, N ) );
     Vec3f TangentY = normalize( cross( N, TangentX ) );
 
-    float a = roughness * roughness;
-    float a2min1 = (a * a) - 1.0;
-    float PI2 = 2.0 * PI;
-
     unsigned int numSamples = numSamples2;
 
     //for( uint p = 0; p < 3; p++ )
@@ -592,16 +627,17 @@ Vec3f Cubemap::prefilterEnvMap( float roughness, const Vec3f& R, const uint numS
             Vec2f Xi = hammersley( i, numSamples );
 
             // importance sampling
-            float Phi = PI2 * Xi[0];
-            float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + a2min1 * Xi[1] ) );
-            float SinTheta = sqrt( 1.0 - std::min(1.0f, CosTheta * CosTheta ) );
-            Vec3f H;
-            H[0] = SinTheta * cos( Phi );
-            H[1] = SinTheta * sin( Phi );
-            H[2] = CosTheta;
+
+            // float Phi = PI2 * Xi[0];
+            // float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + a2min1 * Xi[1] ) );
+            // float SinTheta = sqrt( 1.0 - std::min(1.0f, CosTheta * CosTheta ) );
+            // Vec3f H;
+            // H[0] = SinTheta * cos( Phi );
+            // H[1] = SinTheta * sin( Phi );
+            // H[2] = CosTheta;
 
             // Tangent to world space
-            H =  TangentX * H[0] + TangentY * H[1] + N * H[2];
+            Vec3f H =  importanceSampleGGX( Xi, roughnessLinear, N, TangentX, TangentY);
             H.normalize();
 
             Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
@@ -615,7 +651,7 @@ Vec3f Cubemap::prefilterEnvMap( float roughness, const Vec3f& R, const uint numS
             }
         }
 
-    return prefilteredColor / totalWeight;
+        return prefilteredColor / totalWeight;
 }
 
 
@@ -688,14 +724,15 @@ void Cubemap::getSample(const Vec3f& direction, Vec3f& color ) const {
     int size = _size;
     vectToTexelCoord(direction, size, faceIndex, u,v );
 
+
     const float ii = clamp(u - 0.5f, 0.0f, size - 1.0f);
     const float jj = clamp(v - 0.5f, 0.0f, size - 1.0f);
 
-    const long  i0 = lrintf(floorf(ii)), i1 = lrintf(ceilf(ii));
-    const long  j0 = lrintf(floorf(jj)), j1 = lrintf(ceilf(jj));
+    // const long  i0 = lrintf(ii);
+    // const long  j0 = lrintf(jj);
 
-    const float di = ii - i0;
-    const float dj = jj - j0;
+    const long  i0 = lrintf(u);
+    const long  j0 = lrintf(v);
 
 
     // for ( int i = 0; i < 3; i++ )

@@ -19,6 +19,9 @@ inline bool isNaN(double v) { return std::isnan(v); }
 template<typename T>
 inline T clampTo(T v,T minimum,T maximum) { return v<minimum?minimum:v>maximum?maximum:v; }
 
+template<typename T>
+inline T frac(T v) { return v-floor(v); }
+
 class Vec2f
 {
 public:
@@ -955,11 +958,11 @@ template<typename T>
 inline T saturate(T v) { return v<0.0?0.0:v>1.0?1.0:v; }
 
 
-inline Vec3f importanceSampleGGX( const Vec2f& Xi, float roughness, const Vec3f& N, const Vec3f& TangentX, const Vec3f& TangentY )
+inline Vec3f importanceSampleGGX( const Vec2f& Xi, float roughnessLinear, const Vec3f& N, const Vec3f& TangentX, const Vec3f& TangentY )
 {
-    float a = roughness * roughness;
+    float roughness = roughnessLinear * roughnessLinear;
     float Phi = 2.0 * PI * Xi[0];
-    float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + (a*a - 1.0) * Xi[1] ) );
+    float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
     float SinTheta = sqrt( 1.0 - CosTheta * CosTheta );
     Vec3f H;
     H[0] = SinTheta * cos( Phi );

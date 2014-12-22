@@ -84,7 +84,7 @@ struct RougnessNoVLUT {
     // http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
     // page 7
     // this is the integrate function used to build the LUT
-    Vec2f integrateBRDF( float roughness, float NoV, const int numSamples ) {
+    Vec2f integrateBRDF( float roughnessLinear, float NoV, const int numSamples ) {
 
         Vec3f V;
         V[0] = sqrt( 1.0 - NoV * NoV ); // sin V.y = 0;
@@ -103,13 +103,14 @@ struct RougnessNoVLUT {
         Vec3f TangentX = normalize( cross( UpVector, N ) );
         Vec3f TangentY = normalize( cross( N, TangentX ) );
 
-        float m = roughness*roughness;
+        float roughness = roughnessLinear * roughnessLinear;
+        float m = roughness;
         float k = m * 0.5;
 
         for( int i = 0; i < numSamples; i++ ) {
 
             Vec2f Xi = hammersley( i, numSamples );
-            Vec3f H = importanceSampleGGX( Xi, roughness, N, TangentX, TangentY );
+            Vec3f H = importanceSampleGGX( Xi, roughnessLinear, N, TangentX, TangentY );
             Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
 
             float NoL = saturate( L[2] );
@@ -147,10 +148,10 @@ struct RougnessNoVLUT {
         #pragma omp for
 
         for ( int j = 0 ; j < _size; j++) {
-            float roughness = step * ( j + 0.5 );
+            float roughnessLinear = step * ( j + 0.5 );
             for ( int i = 0 ; i < _size; i++) {
                 float NoV = step * (i + 0.5);
-                Vec2f values = integrateBRDF( roughness, NoV, numSamples);
+                Vec2f values = integrateBRDF( roughnessLinear, NoV, numSamples);
 #if 0
                 // Vec2d values2 = integrateBRDF( roughness, NoV, numSamples2);
 
