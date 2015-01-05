@@ -473,7 +473,7 @@ bool Cubemap::loadCubemap(const std::string& name)
     return true;
 }
 
-void Cubemap::computePrefilteredEnvironment( const std::string& output, int startSize, int endSize, uint nbSamples ) {
+void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int startSize, int endSize, uint nbSamples, const bool fixup ) {
 
     int computeStartSize = startSize;
     if (!computeStartSize)
@@ -501,12 +501,12 @@ void Cubemap::computePrefilteredEnvironment( const std::string& output, int star
         cubemap.init( size );
 
         std::stringstream ss;
-        ss << output << "_" << size << ".tif";
+        ss << output << "_" << i << ".tif";
 
         // generate debug color cubemap after limit size
         if ( i <= endMipMap ) {
             std::cout << "compute level " << i << " with roughness " << roughnessLinear << " " << size << " x " << size << " to " << ss.str();
-            cubemap.computePrefilterCubemapAtLevel( roughnessLinear, *this, nbSamples);
+            cubemap.computePrefilterCubemapAtLevel( roughnessLinear, *this, nbSamples, fixup);
         } else {
             cubemap.fill(Vec4f(1.0,0.0,1.0,1.0));
         }
@@ -514,17 +514,17 @@ void Cubemap::computePrefilteredEnvironment( const std::string& output, int star
     }
 }
 
-void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubemap& inputCubemap, uint nbSamples ) {
-    iterateOnFace(0, roughnessLinear, inputCubemap, nbSamples);
-    iterateOnFace(1, roughnessLinear, inputCubemap, nbSamples);
-    iterateOnFace(2, roughnessLinear, inputCubemap, nbSamples);
-    iterateOnFace(3, roughnessLinear, inputCubemap, nbSamples);
-    iterateOnFace(4, roughnessLinear, inputCubemap, nbSamples);
-    iterateOnFace(5, roughnessLinear, inputCubemap, nbSamples);
+void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubemap& inputCubemap, uint nbSamples, bool fixup ) {
+    iterateOnFace(0, roughnessLinear, inputCubemap, nbSamples, fixup);
+    iterateOnFace(1, roughnessLinear, inputCubemap, nbSamples, fixup);
+    iterateOnFace(2, roughnessLinear, inputCubemap, nbSamples, fixup);
+    iterateOnFace(3, roughnessLinear, inputCubemap, nbSamples, fixup);
+    iterateOnFace(4, roughnessLinear, inputCubemap, nbSamples, fixup);
+    iterateOnFace(5, roughnessLinear, inputCubemap, nbSamples, fixup);
 }
 
 
-void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples ) {
+void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup ) {
 
     // more the roughness is and more the solid angle is big
     // so we want to adapt the number of sample depends on roughness
@@ -550,7 +550,7 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
             int index = lineIndex + i*_samplePerPixel;
             Vec3f direction;
 
-            texelCoordToVect( face, float(i), float(j), size, &direction[0] );
+            texelCoordToVect( face, float(i), float(j), size, &direction[0], fixup ? 1 : 0 );
 
 #if 0
             int faceIndex = -1;
@@ -586,7 +586,7 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
             // assert( faceIndex == face );
 
 #endif
-            Vec3f resultColor = cubemap.prefilterEnvMap( roughnessLinear, direction, numSamples );
+            Vec3f resultColor = cubemap.prefilterEnvMapUE4( roughnessLinear, direction, numSamples );
 
             _images[face][ index     ] = resultColor[0];
             _images[face][ index + 1 ] = resultColor[1];
@@ -608,7 +608,7 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
 }
 
 
-Vec3f Cubemap::prefilterEnvMap( float roughnessLinear, const Vec3f& R, const uint numSamples2 ) const {
+Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const uint numSamples2 ) const {
     Vec3f N = R;
     Vec3f V = R;
     Vec3d prefilteredColor = Vec3d(0,0,0);

@@ -7,7 +7,7 @@
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-s size] [-e stopSize] [-n nbsamples] in.tif out.tif" << std::endl;
+    std::cerr << "Usage: " << name << " [-s size] [-e stopSize] [-n nbsamples] [-f fixup flag ] in.tif out.tif" << std::endl;
     return 1;
 }
 
@@ -18,13 +18,15 @@ int main(int argc, char *argv[])
     int c;
     int endSize = 1;
     int samples = 1024;
+    int fixup = 0;
 
-    while ((c = getopt(argc, argv, "s:e:n:")) != -1)
+    while ((c = getopt(argc, argv, "s:e:n:f")) != -1)
         switch (c)
         {
         case 's': size = atoi(optarg);       break;
         case 'e': endSize = atoi(optarg);  break;
         case 'n': samples = atoi(optarg);  break;
+        case 'f': fixup = 1;  break;
 
         default: return usage(argv[0]);
         }
@@ -38,7 +40,7 @@ int main(int argc, char *argv[])
 
         Cubemap image;
         image.loadCubemap(input);
-        image.computePrefilteredEnvironment( output, size, endSize, samples );
+        image.computePrefilteredEnvironmentUE4( output, size, endSize, samples, fixup );
 
     } else {
         return usage( argv[0] );

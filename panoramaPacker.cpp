@@ -76,12 +76,13 @@ public:
 
             std::cout << "packing level " << level << " size " << size << std::endl;
 
-            int strSize = snprintf( str, 255, _filePattern.c_str(), size );
+            int strSize = snprintf( str, 255, _filePattern.c_str(), level );
             str[strSize+1] = 0;
 
             ImageBuf src ( str );
 
             if ( !src.read() ) {
+                std::cout << "skipping file " << str << std::endl;
                 continue;
             }
 
