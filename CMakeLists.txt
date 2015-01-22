@@ -50,11 +50,14 @@ target_link_libraries(envIrradiance ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRAR
 add_executable(seamlessCubemap seamlessCubemap.cpp  Cubemap.cpp)
 target_link_libraries(seamlessCubemap ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
-add_executable(packer packer.cpp  Cubemap.cpp)
-target_link_libraries(packer ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+add_executable(cubemapPacker cubemapPacker.cpp  Cubemap.cpp)
+target_link_libraries(cubemapPacker ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 add_executable(envPrefilter envPrefilter.cpp Cubemap.cpp)
 target_link_libraries(envPrefilter ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+
+add_executable(envBackground envBackground.cpp Cubemap.cpp)
+target_link_libraries(envBackground ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 add_executable(envBRDF envBRDF.cpp)
 

@@ -32,6 +32,8 @@ struct Cubemap {
     Cubemap();
     ~Cubemap();
 
+    int getSize() const { return _size; }
+
     void fill( const Vec4f& value );
     void init( int size, int sample = 3);
     void write( const std::string& filename );
@@ -48,6 +50,8 @@ struct Cubemap {
 
 
     void computePrefilteredEnvironmentUE4( const std::string& output, int startSize = 0, int startMipMap = 0, uint numSamples = 1024, bool fixup = false);
+    void computeBackground( const std::string& output, int startSize, uint nbSamples, float roughnessLinear, const bool fixup );
+
     void computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint numSamples, bool fixup );
     void iterateOnFace( int face, float roughness, const Cubemap& cubemap, uint numSamples, bool fixup );
     Vec3f prefilterEnvMapUE4( float roughness, const Vec3f& R, uint numSamples ) const;

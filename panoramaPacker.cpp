@@ -141,7 +141,7 @@ public:
         FILE* output = fopen( (_outputDirectory + "_float.bin").c_str(), "wb");
         fwrite( data, size*size*4*3, 1 , output );
 
-        imageMip->save("/tmp/debug_panorama_prefilter.tif");
+        imageMip->write("/tmp/debug_panorama_prefilter.tif");
 
         return imageMip;
     }

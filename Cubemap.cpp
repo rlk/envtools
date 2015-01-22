@@ -448,6 +448,8 @@ void Cubemap::write( const std::string& filename )
 bool Cubemap::loadCubemap(const std::string& name)
 {
     ImageInput* input = ImageInput::open ( name );
+    if ( !input )
+        return false;
 
     for ( int i = 0; i < 6; i++) {
         ImageSpec spec;
@@ -605,6 +607,25 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
 
         }
     }
+}
+
+
+void Cubemap::computeBackground( const std::string& output, int startSize, uint nbSamples, float roughnessLinear , const bool fixup ) {
+
+    int computeStartSize = startSize;
+    if (!computeStartSize)
+        computeStartSize = _size;
+
+    Cubemap cubemap;
+
+    int size = computeStartSize;
+    cubemap.init( size );
+
+    std::stringstream ss;
+    ss << output << ".tif";
+
+    cubemap.computePrefilterCubemapAtLevel( roughnessLinear, *this, nbSamples, fixup);
+    cubemap.write( ss.str() );
 }
 
 
@@ -982,8 +1003,9 @@ Cubemap* Cubemap::makeSeamless() const
 
     // x
     {
+        std::string file = getOutputImageFilename(level, 0, output);
         ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( getOutputImageFilename(level, 0, output).c_str(), specOut, dst->_images[0] );
+        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[0] );
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[0] );
 
         //  top edge: y positif
@@ -1026,15 +1048,16 @@ Cubemap* Cubemap::makeSeamless() const
             imageBufOut.setpixel(0,0,0, allFace);
 
 #ifdef DEBUG
-        imageBufOut.save();
+        imageBufOut.write(file.c_str());
 #endif
     }
 
 
     // -x
     {
+        std::string file = getOutputImageFilename(level, 1, output);
         ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( getOutputImageFilename(level, 1, output).c_str(), specOut, dst->_images[1]);
+        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[1]);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[1] );
 
         //  top edge: y positif
@@ -1077,15 +1100,16 @@ Cubemap* Cubemap::makeSeamless() const
             imageBufOut.setpixel(0,0,0, allFace);
 
 #ifdef DEBUG
-        imageBufOut.save();
+        imageBufOut.write(file.c_str());
 #endif
     }
 
 
     // y
     {
+        std::string file = getOutputImageFilename(level, 2, output);
         ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( getOutputImageFilename(level, 2, output).c_str(), specOut, dst->_images[2]);
+        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[2]);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[2] );
 
         //  top edge: y positif
@@ -1136,15 +1160,16 @@ Cubemap* Cubemap::makeSeamless() const
             imageBufOut.setpixel(0,0,0, allFace);
 
 #ifdef DEBUG
-        imageBufOut.save();
+        imageBufOut.write(file.c_str());
 #endif
     }
 
 
     // -y
     {
+        std::string file = getOutputImageFilename(level, 3, output);
         ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( getOutputImageFilename(level, 3, output).c_str(), specOut, dst->_images[3]);
+        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[3]);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[3] );
 
         //  top edge: z positif
@@ -1198,15 +1223,16 @@ Cubemap* Cubemap::makeSeamless() const
             imageBufOut.setpixel(0,0,0, allFace);
 
 #ifdef DEBUG
-        imageBufOut.save();
+        imageBufOut.write(file.c_str());
 #endif
     }
 
 
     // z
     {
+        std::string file = getOutputImageFilename(level, 4, output);
         ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( getOutputImageFilename(level, 4, output).c_str(), specOut, dst->_images[4]);
+        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[4]);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[4] );
 
         //  top edge: y pos
@@ -1251,7 +1277,7 @@ Cubemap* Cubemap::makeSeamless() const
             imageBufOut.setpixel(0,0,0, allFace);
 
 #ifdef DEBUG
-        imageBufOut.save();
+        imageBufOut.write(file.c_str());
 #endif
     }
 
@@ -1259,8 +1285,9 @@ Cubemap* Cubemap::makeSeamless() const
 
     // -z
     {
+        std::string file = getOutputImageFilename(level, 5, output);
         ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( getOutputImageFilename(level, 5, output).c_str(), specOut, dst->_images[5]);
+        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[5]);
         ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[5] );
 
         //  top edge: y pos
@@ -1310,7 +1337,7 @@ Cubemap* Cubemap::makeSeamless() const
             imageBufOut.setpixel(0,0,0, allFace);
 
 #ifdef DEBUG
-        imageBufOut.save();
+        imageBufOut.write( file.c_str() );
 #endif
     }
 
