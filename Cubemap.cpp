@@ -512,7 +512,7 @@ void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int s
         } else {
             cubemap.fill(Vec4f(1.0,0.0,1.0,1.0));
         }
-        cubemap.write( ss.str() );
+        cubemap.write( ss.str().c_str() );
     }
 }
 
@@ -621,11 +621,8 @@ void Cubemap::computeBackground( const std::string& output, int startSize, uint 
     int size = computeStartSize;
     cubemap.init( size );
 
-    std::stringstream ss;
-    ss << output << ".tif";
-
     cubemap.computePrefilterCubemapAtLevel( roughnessLinear, *this, nbSamples, fixup);
-    cubemap.write( ss.str() );
+    cubemap.write( output.c_str() );
 }
 
 
