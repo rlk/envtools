@@ -44,22 +44,56 @@ include_directories( ${TIFF_INCLUDE_DIR} )
 add_executable(envremap envremap.cpp)
 target_link_libraries(envremap ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} )
 
+install(TARGETS envremap
+  RUNTIME DESTINATION bin
+)
+
 add_executable(envIrradiance envIrradiance.cpp Cubemap.cpp )
 target_link_libraries(envIrradiance ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+
+install(TARGETS envIrradiance
+  RUNTIME DESTINATION bin
+)
 
 add_executable(seamlessCubemap seamlessCubemap.cpp  Cubemap.cpp)
 target_link_libraries(seamlessCubemap ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
+install(TARGETS seamlessCubemap
+  RUNTIME DESTINATION bin
+)
+
 add_executable(cubemapPacker cubemapPacker.cpp  Cubemap.cpp)
 target_link_libraries(cubemapPacker ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+
+install(TARGETS cubemapPacker
+  RUNTIME DESTINATION bin
+)
+
 
 add_executable(envPrefilter envPrefilter.cpp Cubemap.cpp)
 target_link_libraries(envPrefilter ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
+install(TARGETS envPrefilter
+  RUNTIME DESTINATION bin
+)
+
+
 add_executable(envBackground envBackground.cpp Cubemap.cpp)
 target_link_libraries(envBackground ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
+install(TARGETS envBackground
+  RUNTIME DESTINATION bin
+)
+
 add_executable(envBRDF envBRDF.cpp)
+
+install(TARGETS envBRDF
+  RUNTIME DESTINATION bin
+)
 
 add_executable(panoramaPacker panoramaPacker.cpp)
 target_link_libraries(panoramaPacker ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+
+install(TARGETS panoramaPacker
+  RUNTIME DESTINATION bin
+)
