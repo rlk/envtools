@@ -545,8 +545,7 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
     for ( int j = 0; j < size; j++ ) {
         int lineIndex = j*_samplePerPixel*size;
 
-#pragma omp parallel
-#pragma omp for
+#pragma omp parallel for
         for ( int i = 0; i < size; i++ ) {
 
             int index = lineIndex + i*_samplePerPixel;
