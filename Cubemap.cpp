@@ -3,6 +3,7 @@
 #include <sstream>
 #include <vector>
 
+#include "Math"
 #include "Cubemap"
 
 #include <OpenImageIO/imageio.h>
@@ -517,6 +518,7 @@ void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int s
 }
 
 void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubemap& inputCubemap, uint nbSamples, bool fixup ) {
+    roughnessLinear = clampTo(roughnessLinear, 0.0f, 1.0f);
     iterateOnFace(0, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(1, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(2, roughnessLinear, inputCubemap, nbSamples, fixup);
