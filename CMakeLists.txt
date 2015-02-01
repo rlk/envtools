@@ -97,3 +97,7 @@ target_link_libraries(panoramaPacker ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 install(TARGETS panoramaPacker
   RUNTIME DESTINATION bin
 )
+
+install(PROGRAMS process_environment.py
+  DESTINATION bin
+)
