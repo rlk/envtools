@@ -86,7 +86,7 @@ class ProcessEnvironment(object):
         self.brdf_file = 'brdf_ue4.bin'
 
         self.background_size = kwargs.get("background_size", 256 )
-        self.background_blur = kwargs.get("background_blur", 1.5 )
+        self.background_blur = kwargs.get("background_blur", 0.1 )
         self.background_file_base = 'background_cubemap'
 
         self.mipmap_file_base = 'mipmap_cubemap'
@@ -214,9 +214,13 @@ class ProcessEnvironment(object):
         cmd = "{} {} {} {}".format(panorama_packer_cmd, pattern, max_level, output)
         execute_command(cmd)
 
+    def getMaxLevel(self, value ):
+        max_level = int(math.log(float(self.specular_size)) / math.log(2))
+        return max_level
+
     def cubemap_specular_create_mipmap(self, input):
 
-        max_level = int(math.log(self.specular_size) / math.log(2))
+        max_level = self.getMaxLevel(self.specular_size)
 
         previous_file = self.cubemap_generic
         self.cubemap_fix_border(previous_file, "/tmp/fixup_0.tif")
@@ -237,7 +241,7 @@ class ProcessEnvironment(object):
     def cubemap_specular_create_prefilter(self, input ):
         import shutil
 
-        max_level = int(math.log(self.specular_size) / math.log(2))
+        max_level = self.getMaxLevel(self.specular_size)
 
         # compute it one time for panorama
         outout_filename = "/tmp/prefilter_specular"
@@ -358,10 +362,10 @@ class ProcessEnvironment(object):
 parser = argparse.ArgumentParser()
 parser.add_argument("file", help="hdr environment [ .hdr .tif .exr ]")
 parser.add_argument("output", help="output directory")
-parser.add_argument("--nbSamples", action='store', dest='nb_samples', help="nb samples to compute environment 1 to 65536", default=4096)
+parser.add_argument("--nbSamples", action='store', dest='nb_samples', help="nb samples to compute environment 1 to 65536", default=65536)
 parser.add_argument("--specularSize", action='store', dest='specular_size', help="cubemap size for prefiltered texture", default=256)
 parser.add_argument("--backgroundSize", action='store', dest='background_size', help="cubemap size for background texture", default=256)
-parser.add_argument("--backgroundBlur", action='store', dest='background_blur', help="how to blur the background, it uses the same code of prefiltering", default=0.15)
+parser.add_argument("--backgroundBlur", action='store', dest='background_blur', help="how to blur the background, it uses the same code of prefiltering", default=0.1)
 parser.add_argument("--fixedge", action='store_true', help="fix edge for cubemap")
 parser.add_argument("--pretty", action='store_true', help="generate a config file pretty for human")
 
