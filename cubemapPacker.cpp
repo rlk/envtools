@@ -122,7 +122,7 @@ public:
             ImageBuf dstLUV(specOutLUV, _cubemapsLUV[size]._images[i]);
 
 
-            ImageSpec specOutFloat(specIn.width, specIn.height, specIn.nchannels, TypeDesc::FLOAT );
+            ImageSpec specOutFloat(specIn.width, specIn.height, 3, TypeDesc::FLOAT );
             ImageBuf dstFloat("/tmp/test_super_debug.tif", specOutFloat, _cubemapsFloat[size]._images[i]);
 
 

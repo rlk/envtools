@@ -973,4 +973,60 @@ inline Vec3f importanceSampleGGX( const Vec2f& Xi, float roughnessLinear, const 
     return TangentX * H[0] + TangentY * H[1] + N * H[2];
 }
 
+
+inline Vec3f uniformSampleOnCone( const Vec2f& Xi, const float radius, const Vec3f& N, const Vec3f& TangentX, const Vec3f& TangentY, const float sigmaSqr, float& weight )
+{
+
+
+    //  http://jsfiddle.net/d9VRu/
+    float u = Xi[0];
+    float v = Xi[1];
+    float angle = u * PI * 2.0;
+
+    // uniform
+    float r = sqrtf( v ) * radius;
+
+    // not uniform
+    //float r = v * radius;
+
+    float x = r * cosf(angle);
+    float y = r * sinf(angle);
+
+    // compute gaussian weight
+    // https://en.wikipedia.org/wiki/Gaussian_blur
+    // http://stackoverflow.com/questions/17841098/gaussian-blur-standard-deviation-radius-and-kernel-size
+    // http://http.developer.nvidia.com/GPUGems3/gpugems3_ch40.html
+    //float standardDeviation = 0.84089642;
+    //float sigmaSqr = sigma*sigma;
+    // weight = exp(-(x*x + y*y)/twoStandardDeviationSqr)/( PI * twoStandardDeviationSqr );
+    weight = exp(-0.5*(x*x + y*y)/sigmaSqr);
+
+
+
+    Vec3f H;
+    H[0] = x;
+    H[1] = y;
+    H[2] = 1.0;
+
+    H.normalize();
+
+// Tangent to world space
+    return TangentX * H[0] + TangentY * H[1] + N * H[2];
+}
+
+
+// vec3 hemisphereSample_uniform(float u, float v) {
+//      float phi = v * 2.0 * PI;
+//      float cosTheta = 1.0 - u;
+//      float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+//      return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+//  }
+
+//  vec3 hemisphereSample_cos(float u, float v) {
+//      float phi = v * 2.0 * PI;
+//      float cosTheta = sqrt(1.0 - u);
+//      float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+//      return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+//  }
+
 #endif

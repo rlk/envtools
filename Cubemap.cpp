@@ -528,7 +528,7 @@ void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubem
 }
 
 
-void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup ) {
+void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup, bool backgroundAverage ) {
 
     // more the roughness is and more the solid angle is big
     // so we want to adapt the number of sample depends on roughness
@@ -589,7 +589,12 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
             // assert( faceIndex == face );
 
 #endif
-            Vec3f resultColor = cubemap.prefilterEnvMapUE4( roughnessLinear, direction, numSamples );
+
+            Vec3f resultColor;
+            if ( backgroundAverage )
+                resultColor = cubemap.averageEnvMap( roughnessLinear, direction, numSamples );
+            else
+                resultColor = cubemap.prefilterEnvMapUE4( roughnessLinear, direction, numSamples );
 
             _images[face][ index     ] = resultColor[0];
             _images[face][ index + 1 ] = resultColor[1];
@@ -622,7 +627,14 @@ void Cubemap::computeBackground( const std::string& output, int startSize, uint 
     int size = computeStartSize;
     cubemap.init( size );
 
-    cubemap.computePrefilterCubemapAtLevel( roughnessLinear, *this, nbSamples, fixup);
+    roughnessLinear = clampTo(roughnessLinear, 0.0f, 1.0f);
+    cubemap.iterateOnFace(0, roughnessLinear, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(1, roughnessLinear, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(2, roughnessLinear, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(3, roughnessLinear, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(4, roughnessLinear, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(5, roughnessLinear, *this, nbSamples, fixup, true);
+
     cubemap.write( output.c_str() );
 }
 
@@ -671,6 +683,45 @@ Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const 
         }
 
         return prefilteredColor / totalWeight;
+}
+
+
+// same but do a average to compute the background blur
+Vec3f Cubemap::averageEnvMap( float blurSize, const Vec3f& R, const uint numSamples2 ) const {
+    Vec3f N = R;
+    Vec3d prefilteredColor = Vec3d(0,0,0);
+
+    double totalWeight = 0;
+    Vec3f color;
+
+    Vec3f UpVector = fabs(N[2]) < 0.999 ? Vec3f(0,0,1) : Vec3f(1,0,0);
+    Vec3f TangentX = normalize( cross( UpVector, N ) );
+    Vec3f TangentY = normalize( cross( N, TangentX ) );
+
+    // http://stackoverflow.com/questions/17841098/gaussian-blur-standard-deviation-radius-and-kernel-size
+    // http://www.researchgate.net/post/Calculate_the_Gaussian_filters_sigma_using_the_kernels_size
+    // http://stackoverflow.com/questions/8204645/implementing-gaussian-blur-how-to-calculate-convolution-matrix-kernel
+
+    // we are not in pixel but in distance on a circle
+    //n /= blurSize;
+    float sigma = blurSize/3.0; // 3*sigma rules
+    float sigmaSqr = sigma * sigma;
+
+    float wSum = 0.0;
+    unsigned int numSamples = numSamples2;
+    for( uint i = 0; i < numSamples; i++ ) {
+        Vec2f Xi = hammersley( i, numSamples );
+
+        float w;
+        // Tangent to world space
+        Vec3f H =  uniformSampleOnCone( Xi, blurSize, N, TangentX, TangentY, sigmaSqr, w);
+
+        getSample( H, color );
+        prefilteredColor += color*w;
+        wSum += w;
+    }
+
+    return prefilteredColor / wSum;
 }
 
 

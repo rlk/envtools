@@ -81,7 +81,7 @@ public:
 
             ImageBuf src ( str );
 
-            if ( !src.read() ) {
+            if ( !src.read() || size <= 4 ) {
                 std::cout << "skipping file " << str << std::endl;
                 continue;
             }

@@ -53,9 +53,11 @@ struct Cubemap {
     void computeBackground( const std::string& output, int startSize, uint nbSamples, float roughnessLinear, const bool fixup );
 
     void computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint numSamples, bool fixup );
-    void iterateOnFace( int face, float roughness, const Cubemap& cubemap, uint numSamples, bool fixup );
-    Vec3f prefilterEnvMapUE4( float roughness, const Vec3f& R, uint numSamples ) const;
+    void iterateOnFace( int face, float roughness, const Cubemap& cubemap, uint numSamples, bool fixup, bool backgroundAverage = false );
     void getSample(const Vec3f& direction, Vec3f& color ) const;
+
+    Vec3f prefilterEnvMapUE4( float roughness, const Vec3f& R, uint numSamples ) const;
+    Vec3f averageEnvMap( float roughnessLinear, const Vec3f& R, uint numSamples ) const;
 
     Cubemap* makeSeamless() const;
 
