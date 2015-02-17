@@ -112,44 +112,11 @@ class ProcessEnvironment(object):
         compress_extension = ".gz" if self.can_comppress is True else ""
 
         config = self.config
-        config = {
-
-            "backgroundBlur": self.background_blur,
-            "backgroundCubemapSize": [self.background_size, self.background_size],
-            "backgroundPanoramaSize": [self.background_size * 4, self.background_size * 2],
-
-            "mipmapCubemapSize": [self.specular_size, self.specular_size],
-            "specularCubemapUE4Size": [self.specular_size, self.specular_size],
-            "specularPanoramaUE4Size": [self.specular_size * 4, self.specular_size * 4],
-            "specularLimitSize": self.prefilter_stop_size,
-
-            "brdfUE4": self.brdf_file + compress_extension,
-            "brdfUE4Size": [self.integrate_BRDF_size, self.integrate_BRDF_size],
-
-            "diffuseSPH": json.loads(self.sh_coef)
-        }
-
-        for enc in self.encoding_list:
-            file = "{}_cubemap_{}.bin{}".format(self.background_file_base, enc, compress_extension)
-            key = "{}Cubemap_{}".format(self.background_file_base, enc)
-            config[key] = file
-
-            file = "{}_panorama_{}.jpg".format(self.background_file_base, enc)
-            key = "{}Panorama_srgb".format(self.background_file_base)
-            config[key] = file
-
-            for env_type in ["Panorama", "Cubemap"]:
-                file = "{}_{}_ue4_{}.bin{}".format(self.specular_file_base, env_type.lower(), enc, compress_extension)
-                key = "specular{}UE4_{}".format(env_type, enc)
-                config[key] = file
-
-            key = "mipmapCubemap_{}".format(enc)
-            config[key] = "{}_{}.bin{}".format(self.mipmap_file_base, enc, compress_extension)
-
-        config = self.config
         config["diffuseSPH"] = json.loads(self.sh_coef)
 
         for key in ["prefilter", "brdf", "background", "mipmap"]:
+            if key not in config:
+                continue
             for texture in config[key]:
                 f = texture["file"]
                 texture["file"] = os.path.relpath(f, self.output_directory)
@@ -237,7 +204,7 @@ class ProcessEnvironment(object):
                     "size": [specular_size, specular_size],
                     "file": file_to_check,
                     "encoding": encoding,
-                    "type": "cubemap"
+                    "format": "cubemap"
                 })
 
     def compute_brdf_lut_ue4(self):
@@ -304,8 +271,10 @@ class ProcessEnvironment(object):
                     "size": [panorama_size, panorama_size],
                     "file": file_to_check,
                     "encoding": encoding,
+                    "samples": self.nb_samples,
                     "limitSize": prefilter_stop_size,
-                    "type": "panorama"
+                    "format": "panorama",
+                    "type": "specular_ue4"
                 })
 
     def specular_create_prefilter_cubemap(self, specular_size, prefilter_stop_size):
@@ -325,8 +294,10 @@ class ProcessEnvironment(object):
                     "size": [specular_size, specular_size],
                     "file": file_to_check,
                     "encoding": encoding,
+                    "samples": self.nb_samples,
                     "limitSize": prefilter_stop_size,
-                    "type": "cubemap"
+                    "format": "cubemap",
+                    "type": "specular_ue4"
                 })
 
     def specular_create_prefilter(self, specular_size, prefilter_stop_size):
@@ -358,9 +329,9 @@ class ProcessEnvironment(object):
                     "size": [background_size, background_size],
                     "blur": background_blur,
                     "file": file_to_check,
-                    "samples": background_samples,
+                    "samples": samples,
                     "encoding": encoding,
-                    "type": "cubemap"
+                    "format": "cubemap"
                 })
 
     def initBaseTexture(self):
