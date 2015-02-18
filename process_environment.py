@@ -130,17 +130,14 @@ class ProcessEnvironment(object):
         for key in ["prefilter", "brdf", "background", "mipmap"]:
             for texture in self.config[key]:
                 f = texture["file"]
+                size_before = os.path.getsize(f)
                 cmd = "{} a -tgzip -mx=9 -mpass=7 {}.gz {}".format(compress_7Zip_cmd, f, f)
                 output = execute_command(cmd, verbose=False)
                 os.remove(f)
+                size_after = os.path.getsize(f+'.gz')
                 texture["file"] = "{}.gz".format(f)
-        return
-
-        files = glob.glob(os.path.join(self.output_directory, "*.bin"))
-        for f in files:
-            cmd = "{} a -tgzip -mx=9 -mpass=7 {}.gz {}".format(compress_7Zip_cmd, f, f)
-            output = execute_command(cmd, verbose=False)
-            os.remove(f)
+                texture["sizeUncompressed"]  = size_before
+                texture["sizeCompressed"]  = size_after
 
     def compute_irradiance(self):
 
