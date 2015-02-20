@@ -88,6 +88,7 @@ class ProcessEnvironment(object):
         self.nb_samples = kwargs.get("nb_samples", "1024")
         self.background_samples = kwargs.get("background_samples", "1024")
         self.prefilter_stop_size = kwargs.get("prefilter_stop_size", 8)
+        self.thumbnail_size = kwargs.get("thumbnail_size", 256)
         self.fixedge = kwargs.get("fixedge", False)
 
         self.specular_size = kwargs.get("specular_size", 512)
@@ -103,7 +104,9 @@ class ProcessEnvironment(object):
 
         self.encoding_list = ["rgbm", "luv", "float"]
         self.can_comppress = True if which(compress_7Zip_cmd) != None else False
-        self.config = {}
+
+        self.config = { 'textures': [] }
+        self.textures = {}
 
     def writeConfig(self):
         filename = os.path.join(self.output_directory, "config.json")
@@ -114,12 +117,10 @@ class ProcessEnvironment(object):
         config = self.config
         config["diffuseSPH"] = json.loads(self.sh_coef)
 
-        for key in ["prefilter", "brdf", "background", "mipmap"]:
-            if key not in config:
-                continue
-            for texture in config[key]:
-                f = texture["file"]
-                texture["file"] = os.path.relpath(f, self.output_directory)
+        for texture in self.config['textures']:
+            for image in texture['images']:
+                f = image["file"]
+                image["file"] = os.path.relpath(f, self.output_directory)
 
         if self.pretty is True:
             json.dump(config, output, sort_keys=True, indent=4)
@@ -127,17 +128,19 @@ class ProcessEnvironment(object):
             json.dump(config, output)
 
     def compress(self):
-        for key in ["prefilter", "brdf", "background", "mipmap"]:
-            for texture in self.config[key]:
-                f = texture["file"]
+        for texture in self.config['textures']:
+            if texture['type'] == 'thumbnail':
+                continue
+            for image in texture['images']:
+                f = image["file"]
                 size_before = os.path.getsize(f)
                 cmd = "{} a -tgzip -mx=9 -mpass=7 {}.gz {}".format(compress_7Zip_cmd, f, f)
                 output = execute_command(cmd, verbose=False)
                 os.remove(f)
                 size_after = os.path.getsize(f+'.gz')
-                texture["file"] = "{}.gz".format(f)
-                texture["sizeUncompressed"]  = size_before
-                texture["sizeCompressed"]  = size_after
+                image["file"] = "{}.gz".format(f)
+                image["sizeUncompressed"]  = size_before
+                image["sizeCompressed"]  = size_after
 
     def compute_irradiance(self):
 
@@ -197,11 +200,10 @@ class ProcessEnvironment(object):
         for encoding in encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig("mipmap", {
-                    "size": [specular_size, specular_size],
-                    "file": file_to_check,
-                    "encoding": encoding,
-                    "format": "cubemap"
+                self.registerImageConfig( encoding, "cubemap", "mipmap", 8, {
+                    "width": specular_size,
+                    "height": specular_size,
+                    "file": file_to_check
                 })
 
     def compute_brdf_lut_ue4(self):
@@ -212,16 +214,30 @@ class ProcessEnvironment(object):
         cmd = "{} -s {} -n {} {}".format(envIntegrateBRDF_cmd, size, self.nb_samples, outout_filename)
         execute_command(cmd)
 
-        self.registerImageConfig("brdf", {
-            "size": [size, size],
+        self.registerImageConfig( 'rg16', 'lut', "brdf_ue4", None, {
+            "width": size,
+            "height": size,
             "file": outout_filename,
             "samples": self.nb_samples
         })
 
-    def registerImageConfig(self, key, config):
-        if key not in self.config:
-            self.config[key] = []
-        self.config[key].append(config)
+    def registerImageConfig(self, image_encoding, image_format, image_type, limitSize, config):
+        key = image_encoding + image_format + image_type
+        entry = None
+        if key not in self.textures:
+            entry = {
+                'type':  image_type,
+                'format': image_format,
+                'encoding': image_encoding,
+                'images': []
+            }
+            if limitSize is not None:
+                entry['limitSize'] = limitSize
+
+            self.config['textures'].append( entry )
+        else:
+            entry = self.textures[key]
+        entry['images'].append( config )
 
     def process_cubemap_specular_create_prefilter(self, specular_size, prefilter_stop_size, fixedge, output_filename):
         max_level = self.getMaxLevel(specular_size)
@@ -264,14 +280,11 @@ class ProcessEnvironment(object):
         for encoding in encoding_type:
             file_to_check = "{}_{}.bin".format( file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig("prefilter", {
-                    "size": [panorama_size, panorama_size],
+                self.registerImageConfig( encoding, "panorama", "specular_ue4", prefilter_stop_size, {
+                    "width": panorama_size,
+                    "height": panorama_size,
                     "file": file_to_check,
-                    "encoding": encoding,
-                    "samples": self.nb_samples,
-                    "limitSize": prefilter_stop_size,
-                    "format": "panorama",
-                    "type": "specular_ue4"
+                    "samples": self.nb_samples
                 })
 
     def specular_create_prefilter_cubemap(self, specular_size, prefilter_stop_size):
@@ -287,14 +300,11 @@ class ProcessEnvironment(object):
         for encoding in encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig("prefilter", {
-                    "size": [specular_size, specular_size],
+                self.registerImageConfig(encoding, "cubemap", "specular_ue4", prefilter_stop_size, {
+                    "width": specular_size,
+                    "height": specular_size,
                     "file": file_to_check,
-                    "encoding": encoding,
-                    "samples": self.nb_samples,
-                    "limitSize": prefilter_stop_size,
-                    "format": "cubemap",
-                    "type": "specular_ue4"
+                    "samples": self.nb_samples
                 })
 
     def specular_create_prefilter(self, specular_size, prefilter_stop_size):
@@ -322,14 +332,26 @@ class ProcessEnvironment(object):
         for encoding in encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig("background", {
-                    "size": [background_size, background_size],
+                self.registerImageConfig( encoding, "cubemap", "background", None, {
+                    "width": background_size,
+                    "height": background_size,
                     "blur": background_blur,
                     "file": file_to_check,
-                    "samples": samples,
-                    "encoding": encoding,
-                    "format": "cubemap"
+                    "samples": samples
                 })
+
+    def thumbnail_create(self, thumbnail_size ):
+
+        # compute it one time for panorama
+        file_basename = os.path.join(self.output_directory, "thumbnail_{}.jpg".format(thumbnail_size))
+        cmd = "oiiotool {} --resize {}x{} --cpow 0.45454545,0.45454545,0.45454545,1.0 -o {}".format(self.panorama_highres , thumbnail_size, thumbnail_size/2, file_basename)
+        execute_command(cmd)
+
+        self.registerImageConfig( "srgb", "panorama", "thumbnail", None, {
+            "width": thumbnail_size,
+            "height": thumbnail_size/2,
+            "file": file_basename
+        })
 
     def initBaseTexture(self):
         if not os.path.exists(self.output_directory):
@@ -338,6 +360,7 @@ class ProcessEnvironment(object):
         original_file = "/tmp/original_panorama.tif"
         cmd = "iconvert {} {}".format(self.input_file, original_file)
         execute_command(cmd)
+        self.panorama_highres = original_file
 
         cubemap_highres = "/tmp/highres_cubemap.tif"
         cmd = "{} -p {} -o cube {} {}".format(envremap_cmd, self.pattern_filter, original_file, cubemap_highres)
@@ -350,6 +373,9 @@ class ProcessEnvironment(object):
         start = time.time()
 
         self.initBaseTexture()
+
+        # generate thumbnail
+        self.thumbnail_create(self.thumbnail_size)
 
         # generate background
         self.background_create(self.background_size, self.background_blur)
@@ -390,6 +416,8 @@ if __name__ == "__main__":
                         help="nb samples to compute background 1 to 65536", default=4096)
     parser.add_argument("--specularSize", action="store", dest="specular_size",
                         help="cubemap size for prefiltered texture", default=256)
+    parser.add_argument("--thumbnailSize", action="store", dest="thumbnail_size",
+                        help="cubemap size for prefiltered texture", default=256),
     parser.add_argument("--backgroundSize", action="store", dest="background_size",
                         help="cubemap size for background texture", default=256)
     parser.add_argument("--backgroundBlur", action="store", dest="background_blur",
@@ -406,6 +434,7 @@ if __name__ == "__main__":
     process = ProcessEnvironment(input_file,
                                  output_directory,
                                  process_only_background=args.bgonly,
+                                 thumbnail_size=int(args.thumbnail_size),
                                  background_samples=int(args.background_samples),
                                  background_size=int(args.background_size),
                                  specular_size=int(args.specular_size),
