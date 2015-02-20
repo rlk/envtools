@@ -235,6 +235,7 @@ class ProcessEnvironment(object):
                 entry['limitSize'] = limitSize
 
             self.config['textures'].append( entry )
+            self.textures[key] = entry
         else:
             entry = self.textures[key]
         entry['images'].append( config )
@@ -331,6 +332,8 @@ class ProcessEnvironment(object):
 
         for encoding in encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
+            print file_to_check
+            print os.path.exists(file_to_check)
             if os.path.exists(file_to_check) is True:
                 self.registerImageConfig( encoding, "cubemap", "background", None, {
                     "width": background_size,
