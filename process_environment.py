@@ -136,11 +136,11 @@ class ProcessEnvironment(object):
                 size_before = os.path.getsize(f)
                 cmd = "{} a -tgzip -mx=9 -mpass=7 {}.gz {}".format(compress_7Zip_cmd, f, f)
                 output = execute_command(cmd, verbose=False)
-                os.remove(f)
                 size_after = os.path.getsize(f+'.gz')
                 image["file"] = "{}.gz".format(f)
                 image["sizeUncompressed"]  = size_before
                 image["sizeCompressed"]  = size_after
+                os.remove(f)
 
     def compute_irradiance(self):
 
@@ -332,8 +332,6 @@ class ProcessEnvironment(object):
 
         for encoding in encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
-            print file_to_check
-            print os.path.exists(file_to_check)
             if os.path.exists(file_to_check) is True:
                 self.registerImageConfig( encoding, "cubemap", "background", None, {
                     "width": background_size,
@@ -361,7 +359,7 @@ class ProcessEnvironment(object):
             os.makedirs(self.output_directory)
 
         original_file = "/tmp/original_panorama.tif"
-        cmd = "iconvert {} {}".format(self.input_file, original_file)
+        cmd = "iconvert '{}' {}".format(self.input_file, original_file)
         execute_command(cmd)
         self.panorama_highres = original_file
 
