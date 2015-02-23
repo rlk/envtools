@@ -22,7 +22,7 @@ envBackground_cmd = "envBackground"
 compress_7Zip_cmd = "7z"
 
 
-encoding_type = ["luv", "rgbm", "float"]
+
 
 
 def execute_command(cmd, **kwargs):
@@ -76,6 +76,7 @@ def which(program):
 class ProcessEnvironment(object):
 
     def __init__(self, input_file, output_directory, **kwargs):
+        self.encoding_type = ["luv", "rgbm", "float"]
         self.input_file = os.path.abspath(input_file)
         self.output_directory = output_directory
         self.pretty = kwargs.get("pretty", False)
@@ -102,7 +103,6 @@ class ProcessEnvironment(object):
 
         self.mipmap_file_base = "mipmap_cubemap"
 
-        self.encoding_list = ["rgbm", "luv", "float"]
         self.can_comppress = True if which(compress_7Zip_cmd) != None else False
 
         self.config = { 'textures': [] }
@@ -197,7 +197,7 @@ class ProcessEnvironment(object):
         file_basename = os.path.join(self.output_directory, self.mipmap_file_base)
         self.cubemap_packer("/tmp/fixup_%d.tif", max_level, file_basename)
 
-        for encoding in encoding_type:
+        for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
                 self.registerImageConfig( encoding, "cubemap", "mipmap", 8, {
@@ -278,7 +278,7 @@ class ProcessEnvironment(object):
         self.panorama_packer("/tmp/panorama_prefilter_specular_%d.tif", max_level - 1,
                              file_basename)
 
-        for encoding in encoding_type:
+        for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format( file_basename, encoding)
             if os.path.exists(file_to_check) is True:
                 self.registerImageConfig( encoding, "panorama", "specular_ue4", prefilter_stop_size, {
@@ -298,7 +298,7 @@ class ProcessEnvironment(object):
         self.cubemap_packer(
             "/tmp/prefilter_fixup_%d.tif", max_level, file_basename)
 
-        for encoding in encoding_type:
+        for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
                 self.registerImageConfig(encoding, "cubemap", "specular_ue4", prefilter_stop_size, {
@@ -330,7 +330,7 @@ class ProcessEnvironment(object):
             self.output_directory, "{}_cubemap_{}".format(self.background_file_base, background_size))
         self.cubemap_packer(output_filename, 0, file_basename)
 
-        for encoding in encoding_type:
+        for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
                 self.registerImageConfig( encoding, "cubemap", "background", None, {
