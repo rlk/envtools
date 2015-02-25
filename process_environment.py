@@ -281,7 +281,7 @@ class ProcessEnvironment(object):
         for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format( file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig( encoding, "panorama", "specular_ue4", prefilter_stop_size, {
+                self.registerImageConfig( encoding, "panorama", "specular_ue4", prefilter_stop_size * 4, {
                     "width": panorama_size,
                     "height": panorama_size,
                     "file": file_to_check,
@@ -309,7 +309,7 @@ class ProcessEnvironment(object):
                 })
 
     def specular_create_prefilter(self, specular_size, prefilter_stop_size):
-        self.specular_create_prefilter_panorama(specular_size, prefilter_stop_size * 4)
+        self.specular_create_prefilter_panorama(specular_size, prefilter_stop_size)
         self.specular_create_prefilter_cubemap(specular_size, prefilter_stop_size)
 
     def background_create(self, background_size, background_blur, background_samples=None):
