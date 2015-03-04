@@ -6,7 +6,6 @@ import os
 import time
 import math
 import json
-import glob
 import argparse
 
 DEBUG = False
@@ -20,9 +19,6 @@ envremap_cmd = "envremap"
 seamlessCubemap_cmd = "seamlessCubemap"
 envBackground_cmd = "envBackground"
 compress_7Zip_cmd = "7z"
-
-
-
 
 
 def execute_command(cmd, **kwargs):
@@ -105,14 +101,12 @@ class ProcessEnvironment(object):
 
         self.can_comppress = True if which(compress_7Zip_cmd) != None else False
 
-        self.config = { 'textures': [] }
+        self.config = {'textures': []}
         self.textures = {}
 
     def writeConfig(self):
         filename = os.path.join(self.output_directory, "config.json")
         output = open(filename, "w")
-
-        compress_extension = ".gz" if self.can_comppress is True else ""
 
         config = self.config
         config["diffuseSPH"] = json.loads(self.sh_coef)
@@ -135,11 +129,11 @@ class ProcessEnvironment(object):
                 f = image["file"]
                 size_before = os.path.getsize(f)
                 cmd = "{} a -tgzip -mx=9 -mpass=7 {}.gz {}".format(compress_7Zip_cmd, f, f)
-                output = execute_command(cmd, verbose=False)
-                size_after = os.path.getsize(f+'.gz')
+                execute_command(cmd, verbose=False)
+                size_after = os.path.getsize(f + '.gz')
                 image["file"] = "{}.gz".format(f)
-                image["sizeUncompressed"]  = size_before
-                image["sizeCompressed"]  = size_after
+                image["sizeUncompressed"] = size_before
+                image["sizeCompressed"] = size_after
                 os.remove(f)
 
     def compute_irradiance(self):
@@ -186,10 +180,11 @@ class ProcessEnvironment(object):
 
         for i in range(0, max_level + 1):
             size = int(math.pow(2, max_level - i))
-            level = i
             outout_filename = "/tmp/specular_{}.tif".format(i)
-            cmd = "{} -p {} -n {} -i cube -o cube {} {}".format(envremap_cmd,
-                                                                self.pattern_filter, size, previous_file, outout_filename)
+            cmd = "{} -p {} -n {} -i cube -o cube {} {}".format(
+                envremap_cmd, self.pattern_filter, size,
+                previous_file, outout_filename)
+
             previous_file = outout_filename
             execute_command(cmd)
             self.cubemap_fix_border(outout_filename, "/tmp/fixup_{}.tif".format(i))
@@ -200,7 +195,7 @@ class ProcessEnvironment(object):
         for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig( encoding, "cubemap", "mipmap", 8, {
+                self.registerImageConfig(encoding, "cubemap", "mipmap", 8, {
                     "width": specular_size,
                     "height": specular_size,
                     "file": file_to_check
@@ -214,7 +209,7 @@ class ProcessEnvironment(object):
         cmd = "{} -s {} -n {} {}".format(envIntegrateBRDF_cmd, size, self.nb_samples, outout_filename)
         execute_command(cmd)
 
-        self.registerImageConfig( 'rg16', 'lut', "brdf_ue4", None, {
+        self.registerImageConfig('rg16', 'lut', "brdf_ue4", None, {
             "width": size,
             "height": size,
             "file": outout_filename,
@@ -223,10 +218,13 @@ class ProcessEnvironment(object):
 
     def registerImageConfig(self, image_encoding, image_format, image_type, limitSize, config):
         key = image_encoding + image_format + image_type
+        if 'nbSamples' in config:
+            key += str(config['nbSamples'])
+
         entry = None
         if key not in self.textures:
             entry = {
-                'type':  image_type,
+                'type': image_type,
                 'format': image_format,
                 'encoding': image_encoding,
                 'images': []
@@ -234,19 +232,19 @@ class ProcessEnvironment(object):
             if limitSize is not None:
                 entry['limitSize'] = limitSize
 
-            self.config['textures'].append( entry )
+            self.config['textures'].append(entry)
             self.textures[key] = entry
         else:
             entry = self.textures[key]
-        entry['images'].append( config )
+        entry['images'].append(config)
 
     def process_cubemap_specular_create_prefilter(self, specular_size, prefilter_stop_size, fixedge, output_filename):
-        max_level = self.getMaxLevel(specular_size)
-
         fix_flag = "-f" if fixedge else ""
 
         cmd = "{} -s {} -e {} -n {} {} {} {}".format(
-            envPrefilter_cmd, specular_size, prefilter_stop_size, self.nb_samples, fix_flag, self.cubemap_highres, output_filename)
+            envPrefilter_cmd, specular_size, prefilter_stop_size,
+            self.nb_samples, fix_flag, self.cubemap_highres,
+            output_filename)
         execute_command(cmd)
 
     def specular_create_prefilter_panorama(self, specular_size, prefilter_stop_size):
@@ -269,19 +267,20 @@ class ProcessEnvironment(object):
             size = pow(2, max_level - i)
             input_filename = "{}_{}.tif".format(tmp_filename, level)
             output_filename = "/tmp/panorama_prefilter_specular_{}.tif".format(level)
-            cmd = "{} -p {} -n {} -i cube -o rect {} {}".format(envremap_cmd,
-                                                                self.pattern_filter, size / 2, input_filename, output_filename)
+            cmd = "{} -p {} -n {} -i cube -o rect {} {}".format(
+                envremap_cmd, self.pattern_filter, size / 2,
+                input_filename, output_filename)
             execute_command(cmd)
 
-        file_basename = os.path.join(self.output_directory, "specular_panorama_ue4_{}".format(panorama_size) )
+        file_basename = os.path.join(self.output_directory, "specular_panorama_ue4_{}".format(panorama_size))
 
         self.panorama_packer("/tmp/panorama_prefilter_specular_%d.tif", max_level - 1,
                              file_basename)
 
         for encoding in self.encoding_type:
-            file_to_check = "{}_{}.bin".format( file_basename, encoding)
+            file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig( encoding, "panorama", "specular_ue4", prefilter_stop_size * 4, {
+                self.registerImageConfig(encoding, "panorama", "specular_ue4", prefilter_stop_size * 4, {
                     "width": panorama_size,
                     "height": panorama_size,
                     "file": file_to_check,
@@ -294,7 +293,7 @@ class ProcessEnvironment(object):
         self.process_cubemap_specular_create_prefilter(
             specular_size, prefilter_stop_size, True, "/tmp/prefilter_fixup")
 
-        file_basename = os.path.join(self.output_directory, "specular_cubemap_ue4_{}".format(specular_size) )
+        file_basename = os.path.join(self.output_directory, "specular_cubemap_ue4_{}".format(specular_size))
         self.cubemap_packer(
             "/tmp/prefilter_fixup_%d.tif", max_level, file_basename)
 
@@ -321,19 +320,24 @@ class ProcessEnvironment(object):
         # compute it one time for panorama
         output_filename = "/tmp/background.tiff"
         fixedge = "-f" if self.fixedge else ""
-        cmd = "{} -s {} -n {} -r {} {} {} {}".format(envBackground_cmd, background_size,
-                                                     samples, background_blur, fixedge, self.cubemap_highres, output_filename)
+        cmd = "{} -s {} -n {} -r {} {} {} {}".format(
+            envBackground_cmd, background_size, samples,
+            background_blur, fixedge, self.cubemap_highres,
+            output_filename)
+
         execute_command(cmd)
 
         # packer use a pattern, fix cubemap packer ?
-        file_basename = os.path.join(
-            self.output_directory, "{}_cubemap_{}".format(self.background_file_base, background_size))
+        file_basename = os.path.join(self.output_directory, "{}_cubemap_{}_{}".format(
+            self.background_file_base,
+            background_size,
+            background_blur))
         self.cubemap_packer(output_filename, 0, file_basename)
 
         for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
             if os.path.exists(file_to_check) is True:
-                self.registerImageConfig( encoding, "cubemap", "background", None, {
+                self.registerImageConfig(encoding, "cubemap", "background", None, {
                     "width": background_size,
                     "height": background_size,
                     "blur": background_blur,
@@ -341,16 +345,17 @@ class ProcessEnvironment(object):
                     "samples": samples
                 })
 
-    def thumbnail_create(self, thumbnail_size ):
+    def thumbnail_create(self, thumbnail_size):
 
         # compute it one time for panorama
         file_basename = os.path.join(self.output_directory, "thumbnail_{}.jpg".format(thumbnail_size))
-        cmd = "oiiotool {} --resize {}x{} --cpow 0.45454545,0.45454545,0.45454545,1.0 -o {}".format(self.panorama_highres , thumbnail_size, thumbnail_size/2, file_basename)
+        cmd = "oiiotool {} --resize {}x{} --cpow 0.45454545,0.45454545,0.45454545,1.0 -o {}".format(
+            self.panorama_highres, thumbnail_size, thumbnail_size / 2, file_basename)
         execute_command(cmd)
 
-        self.registerImageConfig( "srgb", "panorama", "thumbnail", None, {
+        self.registerImageConfig("srgb", "panorama", "thumbnail", None, {
             "width": thumbnail_size,
-            "height": thumbnail_size/2,
+            "height": thumbnail_size / 2,
             "file": file_basename
         })
 

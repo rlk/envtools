@@ -694,6 +694,12 @@ Vec3f Cubemap::averageEnvMap( float blurSize, const Vec3f& R, const uint numSamp
     double totalWeight = 0;
     Vec3f color;
 
+    // only one sample copy
+    if ( numSamples2 == 1 ) {
+        getSample( R, color );
+        return color;
+    }
+
     Vec3f UpVector = fabs(N[2]) < 0.999 ? Vec3f(0,0,1) : Vec3f(1,0,0);
     Vec3f TangentX = normalize( cross( UpVector, N ) );
     Vec3f TangentY = normalize( cross( N, TangentX ) );
