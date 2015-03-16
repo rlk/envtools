@@ -2,15 +2,10 @@
 
 Copyright &copy; 2012&ndash;2013 &mdash; [Robert Kooima](http://kooima.net)
 
-The environment mapping tools are a set of command line utilities that operate upon spherical images in TIFF form. These operations including remapping between common spherical projections and generating diffuse irradiance maps from specular environment maps.
+Copyright &copy; 2014&ndash;2015 &mdash; [Cedric Pinson](http://cedricpinson.com)
 
-- [envremap.c](envremap.c)
-- [envtoirr.c](envtoirr.c)
 
-The following header files provide the ICC profiles needed for well-formed floating-point TIFFs.
-
-- [gray.h](gray.h)
-- [sRGB.h](sRGB.h)
+A set of tools to manipulate environment for Physical Based Rendering
 
 ## Spherical Remapping
 
@@ -64,20 +59,73 @@ This tool remaps the input image `src.tif` to the output `dst.tif`. The sample d
 
 ## Irradiance Generation
 
-This tool generates an irradiance environment map from a given environment map using the method of Ramamoorthi and Hanrahan's [An Efficient Representation for Irradiance Environment Maps](http://graphics.stanford.edu/papers/envmap/). The input _must_ be a 32-bit floating point TIFF image in cube map format with six pages.
+This tool generates an irradiance environment map from a given environment map using the same code in CubemapGen from amd and patched by [Sebastien Lagarde](https://seblagarde.wordpress.com/2012/06/10/amd-cubemapgen-for-physically-based-rendering/)
 
-`envtoirr [-n n] [-f src.tif] [-ges] dst.tif`
+`envIrradiance [-n n] [-f fixup] in.tif dst.tif`
 
 - `-n n`
 
     Output size. The output will be a 32-bit floating point TIFF with six pages, each `n` &times; `n` in size.
 
-- `-f src.tif`
+- `-f fixup method`
 
-    Input TIFF file.
 
-- `-g`  
-  `-e`  
-  `-s`
+## BRDF LUT generation
 
-    Forego loading an input file and instead generate an irradiance map using one of the parameter sets from Ramamoorth and Hanrahan. Options are `-g` Grace Cathedral, `-e` Eucalyptus Grove, or `s` St. Peter's Basilica.
+This tool generates the brdf lut like in [UE4](http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf)
+
+`envBRDF [-s size] [-n samples] output.raw`
+
+- `-s size`
+
+    Output size. The output will be a rgba uint16 fixed integer.
+
+- `-n samples`
+
+    Number of samples used to generate the lut.
+
+
+## Prefilter environment
+
+This tool generates prefiltered environment like in [UE4](http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf)
+
+`envPrefilter [-s size] [-e stopSize] [-n nbsamples] [-f fixup flag ] in.tif out.tif`
+
+- `-s size`
+
+    Output size
+
+- `-e stopSize`
+
+    This limit the size of texture used to interpolate the roughness in different LOD. For example if you limit the size to 8, the roughness will be spread between size and 8.
+
+- `-f toggle seamless`
+
+    Generate cubemap with the stretch code from amd cubemap for seamless cubemap.
+
+- `-n samples`
+
+    Number of samples used to generate the lut.
+
+
+## Background generation
+
+This tool generates cubemap environment blurred to be used as background environment
+
+`envBackground [-s size] [-n nbsamples] [-b blur angle ] [-f toggle fixup edge ] in.tif out.tif`
+
+- `-s size`
+
+    Output size
+
+- `-b blurlevel`
+
+    The blur level is the radius angle of the cone used to make the blur
+
+- `-f toggle seamless`
+
+    Generate cubemap with the stretch code from amd cubemap for seamless cubemap.
+
+- `-n samples`
+
+    Number of samples used to generate the lut.
