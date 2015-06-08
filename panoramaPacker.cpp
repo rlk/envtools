@@ -16,6 +16,7 @@
 
 OIIO_NAMESPACE_USING
 
+bool writeByChannel = false;
 
 struct PanoramaRGBA8 {
 
@@ -28,15 +29,53 @@ struct PanoramaRGBA8 {
     }
 
     void pack( const std::string& file) {
+
         FILE* output = fopen( file.c_str(), "wb");
-        fwrite( _image, _size*_size*4, 1 , output );
+
+        if (writeByChannel) {
+            // write by channel
+            for ( int c = 0; c < 4; c++ )
+                for ( int b = 0; b < _size*_size; b++ ) {
+                    uint8_t* p = &(_image[b*4]);
+                    fwrite( &p[c], 1, 1 , output );
+                }
+        } else {
+
+            fwrite( _image, _size*_size*4, 1 , output );
+        }
+
+    }
+};
+
+
+
+struct PanoramaRGB32 {
+
+    int _size; // width
+    float* _image;
+
+    void init(int size) {
+        _size = size;
+        _image = new float[size*size*3];
     }
 
-    void fillBlank() {
-        memset( _image, 0, _size*_size/2*4 );
+    void pack( const std::string& file) {
+
+        FILE* output = fopen( file.c_str(), "wb");
+
+        if (writeByChannel) {
+            // write by channel
+            for ( int c = 0; c < 3; c++ )
+                for ( int b = 0; b < _size*_size; b++ ) {
+                    float* p = &(_image[b*3]);
+                    fwrite( &p[c], 4, 1 , output );
+                }
+        } else {
+
+            fwrite( _image, _size*_size*3*4, 1 , output );
+        }
+
     }
-
-
 };
 
 
@@ -48,6 +87,7 @@ public:
     PanoramaRGBA8 _RGBM;
     PanoramaRGBA8 _RGBE;
     PanoramaRGBA8 _LUV;
+    PanoramaRGB32 _float;
     std::string _filePattern;
     std::string _outputDirectory;
 
@@ -64,7 +104,8 @@ public:
         int size = int( pow(2,_maxLevel) );
 
         ImageSpec specMip( size, size, 3, TypeDesc::FLOAT );
-        float* data = new float[size*size*3];
+        _float.init( size );
+        float* data = _float._image;
         ImageBuf* imageMip = new ImageBuf( specMip , data );
 
         uint offset = size/2;
@@ -138,8 +179,7 @@ public:
         }
 
 
-        FILE* output = fopen( (_outputDirectory + "_float.bin").c_str(), "wb");
-        fwrite( data, size*size*4*3, 1 , output );
+        _float.pack(_outputDirectory + "_float.bin");
 
         imageMip->write("/tmp/debug_panorama_prefilter.tif");
 
@@ -226,16 +266,39 @@ public:
 };
 
 
+static int usage(const std::string& name)
+{
+    std::cerr << "Usage: " << name << " [-c write by channel] level inputPattern output" << std::endl;
+    std::cerr << "eg: " << name << " 5 input_%d.tif /tmp/test/" << std::endl;
+    return 1;
+}
+
+
 int main(int argc, char** argv) {
 
-    if ( argc < 3 ) {
-        std::cout << "usage " << argv[0] << " inputPattern level output" << std::endl;
-        return 1;
-    }
+    int level = 0;
+    int c;
+    writeByChannel = false;
+    while ((c = getopt(argc, argv, "c")) != -1)
+        switch (c)
+        {
+        case 'c': writeByChannel = true;     break;
+
+        default: return usage(argv[0]);
+        }
+
 
     std::string filePattern = argv[1];
-    int level = atof(argv[2]);
     std::string outputDir = argv[3];
+
+    if ( optind < argc-2 ) {
+
+        // generate specular ibl
+        filePattern = std::string( argv[optind] );
+        level = atof( argv[optind+1] );
+        outputDir = std::string( argv[optind+2] );
+
+    }
 
     Packer packer( filePattern, level,  outputDir );
     packer.pack( packer.mipmap() );

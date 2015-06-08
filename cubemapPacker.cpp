@@ -20,6 +20,8 @@
 OIIO_NAMESPACE_USING
 
 
+bool writeByChannel = false;
+
 struct CubemapRGBA8 {
 
     int _size;
@@ -32,8 +34,21 @@ struct CubemapRGBA8 {
     }
 
     void pack( FILE* output) {
-        for ( int i = 0; i < 6; i++ )
-            fwrite( _images[i], _size*_size*4, 1 , output );
+
+        if (writeByChannel) {
+            // write by channel
+            for ( int i = 0; i < 6; i++ )
+                for ( int c = 0; c < 4; c++ )
+                    for ( int b = 0; b < _size*_size; b++ ) {
+                        uint8_t* p = &(_images[i][b*4]);
+                        fwrite( &p[c], 1, 1 , output );
+                    }
+        } else {
+
+            for ( int i = 0; i < 6; i++ )
+                fwrite( _images[i], _size*_size*4, 1 , output );
+        }
+
     }
 
 };
@@ -51,8 +66,19 @@ struct CubemapFloat {
     }
 
     void pack( FILE* output) {
-        for ( int i = 0; i < 6; i++ ) {
-            fwrite( _images[i], _size*_size*4*3, 1 , output );
+
+        if (writeByChannel) {
+
+            for ( int i = 0; i < 6; i++ )
+                for ( int c = 0; c < 3; c++ )
+                    for ( int b = 0; b < _size*_size; b++ ) {
+                        float* p = &(_images[i][b*3]);
+                        fwrite( &p[c], 4, 1 , output );
+                    }
+        } else {
+            for ( int i = 0; i < 6; i++ ) {
+                fwrite( _images[i], _size*_size*4*3, 1 , output );
+            }
         }
     }
 
@@ -236,7 +262,7 @@ public:
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-p toogle pattern] [-n nb level] input.tif outputdirectory" << std::endl;
+    std::cerr << "Usage: " << name << " [-c write by channel] [-p toogle pattern] [-n nb level] input.tif outputdirectory" << std::endl;
     std::cerr << "eg: " << name << " -p -n 5 input_%d.tif /tmp/test/" << std::endl;
     std::cerr << "eg: " << name << "input.tif /tmp/test/" << std::endl;
     return 1;
@@ -247,9 +273,11 @@ int main(int argc, char** argv) {
     bool pattern = false;
     int nb = 0;
     int c;
-    while ((c = getopt(argc, argv, "pn:")) != -1)
+    writeByChannel = false;
+    while ((c = getopt(argc, argv, "cpn:")) != -1)
         switch (c)
         {
+        case 'c': writeByChannel = true;     break;
         case 'p': pattern = true;     break;
         case 'n': nb = atoi(optarg);  break;
 

@@ -691,7 +691,6 @@ Vec3f Cubemap::averageEnvMap( float blurSize, const Vec3f& R, const uint numSamp
     Vec3f N = R;
     Vec3d prefilteredColor = Vec3d(0,0,0);
 
-    double totalWeight = 0;
     Vec3f color;
 
     // only one sample copy
@@ -721,7 +720,7 @@ Vec3f Cubemap::averageEnvMap( float blurSize, const Vec3f& R, const uint numSamp
         float w;
         // Tangent to world space
         Vec3f H =  uniformSampleOnCone( Xi, blurSize, N, TangentX, TangentY, sigmaSqr, w);
-
+        //float d = dot(H,N);
         getSample( H, color );
         prefilteredColor += color*w;
         wSum += w;

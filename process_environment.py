@@ -72,7 +72,7 @@ def which(program):
 class ProcessEnvironment(object):
 
     def __init__(self, input_file, output_directory, **kwargs):
-        self.encoding_type = ["luv", "rgbm", "float"]
+        self.encoding_type = ["luv", "rgbm", "rgbe", "float"]
         self.input_file = os.path.abspath(input_file)
         self.output_directory = output_directory
         self.pretty = kwargs.get("pretty", False)
@@ -87,6 +87,7 @@ class ProcessEnvironment(object):
         self.prefilter_stop_size = kwargs.get("prefilter_stop_size", 8)
         self.thumbnail_size = kwargs.get("thumbnail_size", 256)
         self.fixedge = kwargs.get("fixedge", False)
+        self.write_by_channel = kwargs.get("write_by_channel", False)
 
         self.specular_size = kwargs.get("specular_size", 512)
         self.specular_file_base = "specular"
@@ -158,14 +159,16 @@ class ProcessEnvironment(object):
 
     def cubemap_packer(self, pattern, max_level, output):
         cmd = ""
+        write_by_channel = "-c" if self.write_by_channel else ""
         if max_level > 0:
-            cmd = "{} -p -n {} {} {}".format(cubemap_packer_cmd, max_level, pattern, output)
+            cmd = "{} {} -p -n {} {} {}".format(cubemap_packer_cmd, write_by_channel, max_level, pattern, output)
         else:
-            cmd = "{} {} {}".format(cubemap_packer_cmd, pattern, output)
+            cmd = "{} {} {} {}".format(cubemap_packer_cmd, write_by_channel, pattern, output)
         execute_command(cmd)
 
     def panorama_packer(self, pattern, max_level, output):
-        cmd = "{} {} {} {}".format(panorama_packer_cmd, pattern, max_level, output)
+        write_by_channel = "-c" if self.write_by_channel else ""
+        cmd = "{} {} {} {} {}".format(panorama_packer_cmd, write_by_channel, pattern, max_level, output)
         execute_command(cmd)
 
     def getMaxLevel(self, value):
@@ -416,6 +419,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("file", help="hdr environment [ .hdr .tif .exr ]")
     parser.add_argument("output", help="output directory")
+    parser.add_argument("--write-by-channel", action="store_true", dest="write_by_channel",
+                        help="write by channel all red then green then blue ...")
     parser.add_argument("--nbSamples", action="store", dest="nb_samples",
                         help="nb samples to compute environment 1 to 65536", default=65536)
     parser.add_argument("--backgroundSamples", action="store", dest="background_samples",
@@ -446,6 +451,7 @@ if __name__ == "__main__":
                                  specular_size=int(args.specular_size),
                                  nb_samples=int(args.nb_samples),
                                  background_blur=float(args.background_blur),
+                                 write_by_channel=args.write_by_channel,
                                  prefilter_stop_size=8,
                                  fixedge=args.fixedge,
                                  pretty=args.pretty)
