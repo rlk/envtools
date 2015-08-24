@@ -13,6 +13,9 @@
 
 OIIO_NAMESPACE_USING
 
+// stats
+static uint statsTotalSamples = 0;
+static uint statsTotalSamplesHit = 0;
 
 void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, int fixup = 0);
 void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u, float& v);
@@ -525,6 +528,10 @@ void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubem
     iterateOnFace(3, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(4, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(5, roughnessLinear, inputCubemap, nbSamples, fixup);
+
+    std::cout << "nSamples " << statsTotalSamples << " ratio hits " << statsTotalSamplesHit*1.0/statsTotalSamples * 100.0 <<"%" << std::endl;
+    statsTotalSamples = 0;
+    statsTotalSamplesHit = 0;
 }
 
 
@@ -652,37 +659,26 @@ Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const 
     Vec3f TangentY = normalize( cross( N, TangentX ) );
 
     unsigned int numSamples = numSamples2;
+    statsTotalSamples += numSamples;
 
-    //for( uint p = 0; p < 3; p++ )
-        for( uint i = 0; i < numSamples; i++ ) {
-            Vec2f Xi = hammersley( i, numSamples );
+    for( uint i = 0; i < numSamples; i++ ) {
 
-            // importance sampling
+        // see getPrecomputedLightInLocalSpace in Math
+        // and https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
+        // for the simplification
+        const Vec3f& L = getPrecomputedLightInLocalSpace( i, numSamples, roughnessLinear);
+        float NoL = L[2];
 
-            // float Phi = PI2 * Xi[0];
-            // float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + a2min1 * Xi[1] ) );
-            // float SinTheta = sqrt( 1.0 - std::min(1.0f, CosTheta * CosTheta ) );
-            // Vec3f H;
-            // H[0] = SinTheta * cos( Phi );
-            // H[1] = SinTheta * sin( Phi );
-            // H[2] = CosTheta;
-
-            // Tangent to world space
-            Vec3f H =  importanceSampleGGX( Xi, roughnessLinear, N, TangentX, TangentY);
-            H.normalize();
-
-            Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
-            L.normalize();
-            float NoL = saturate( dot( N, L ) );
-
-            if( NoL > 0.0 ) {
-                getSample( L, color );
-                prefilteredColor += Vec3d( color * NoL );
-                totalWeight += NoL;
-            }
+        if( NoL > 0.0 ) {
+            statsTotalSamplesHit++;
+            Vec3f LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
+            getSample( LworldSpace, color );
+            prefilteredColor += Vec3d( color * NoL );
+            totalWeight += NoL;
         }
+    }
 
-        return prefilteredColor / totalWeight;
+    return prefilteredColor / totalWeight;
 }
 
 

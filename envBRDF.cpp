@@ -109,8 +109,11 @@ struct RougnessNoVLUT {
 
         for( int i = 0; i < numSamples; i++ ) {
 
-            Vec2f Xi = hammersley( i, numSamples );
-            Vec3f H = importanceSampleGGX( Xi, roughnessLinear, N, TangentX, TangentY );
+            // sample in local space
+            Vec3f H = importanceSampleGGX( i, numSamples, roughnessLinear);
+            // sample in worldspace
+            H =  TangentX * H[0] + TangentY * H[1] + N * H[2];
+
             Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
 
             float NoL = saturate( L[2] );

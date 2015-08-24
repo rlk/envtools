@@ -21,7 +21,14 @@ static Vec3f CubemapFace[6][3] = {
     { Vec3f(-1,0,0), Vec3f(0,-1,0),Vec3f(0,0,-1) } // z negatif
 };
 
+
 struct Cubemap {
+
+    struct MipLevel {
+        int _size;
+        float* _images[6];
+    };
+
 
     int _size;
     float* _images[6];

@@ -915,27 +915,23 @@ inline double radicalInverse_VdC(unsigned int bits) {
     return double(bits) * 2.3283064365386963e-10; // / 0x100000000
 }
 
-inline Vec2d hammersley(unsigned int i, unsigned int N) {
-    return Vec2d(double(i)/double(N), radicalInverse_VdC(i));
-}
 
+static Vec2f cacheHammersleySamples[65536];
+static unsigned int cacheHammersleyNbSamples = 0;
 
-inline Vec2f hammersley2(unsigned int originalSample, unsigned int exp )
-{
-    unsigned int revertSample;
-    float expInverse = 1.0/ float( ( 1 << exp ) - 1 );
-
-    // Revert bits by swapping blockwise. Lower bits are moved up and higher bits down.
-    revertSample = (originalSample << 16u) | (originalSample >> 16u);
-    revertSample = ((revertSample & 0x00ff00ffu) << 8u) | ((revertSample & 0xff00ff00u) >> 8u);
-    revertSample = ((revertSample & 0x0f0f0f0fu) << 4u) | ((revertSample & 0xf0f0f0f0u) >> 4u);
-    revertSample = ((revertSample & 0x33333333u) << 2u) | ((revertSample & 0xccccccccu) >> 2u);
-    revertSample = ((revertSample & 0x55555555u) << 1u) | ((revertSample & 0xaaaaaaaau) >> 1u);
-
-    // Shift back, as only m bits are used.
-    revertSample = revertSample >> (32 - exp );
-
-    return Vec2f(float(revertSample) * expInverse, float(originalSample) * expInverse);
+inline const Vec2f& hammersley(unsigned int i, unsigned int N) {
+#if 0
+    if (cacheHammersleyNbSamples != N) {
+        cacheHammersleyNbSamples = N;
+        for ( unsigned int  j = 0; j < N; j++ ) {
+            cacheHammersleySamples[j] = Vec2f(float(j)/float(N), radicalInverse_VdC(j));
+        }
+        cacheHammersleyNbSamples = N;
+    }
+#else
+    cacheHammersleySamples[i] = Vec2f(float(i)/float(N), radicalInverse_VdC(i));
+#endif
+    return cacheHammersleySamples[i];
 }
 
 
@@ -958,8 +954,34 @@ template<typename T>
 inline T saturate(T v) { return v<0.0?0.0:v>1.0?1.0:v; }
 
 
-inline Vec3f importanceSampleGGX( const Vec2f& Xi, float roughnessLinear, const Vec3f& N, const Vec3f& TangentX, const Vec3f& TangentY )
+static Vec3f cacheImportanceSampleGGX[65536];
+static float cacheImportanceSampleRoughness = -1.0;
+
+inline const Vec3f& importanceSampleGGX( unsigned int i, unsigned int numSamples, float roughnessLinear )
 {
+#if 1
+    if ( cacheImportanceSampleRoughness != roughnessLinear ) {
+
+        for ( unsigned int a = 0; a < numSamples; a++ ) {
+            Vec2f Xi = hammersley( a, numSamples );
+
+            float roughness = roughnessLinear * roughnessLinear;
+            float Phi = 2.0 * PI * Xi[0];
+            float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
+            float SinTheta = sqrt( 1.0 - CosTheta * CosTheta );
+            Vec3f H;
+            H[0] = SinTheta * cos( Phi );
+            H[1] = SinTheta * sin( Phi );
+            H[2] = CosTheta;
+            H.normalize();
+
+            cacheImportanceSampleGGX[a] = H;
+        }
+        cacheImportanceSampleRoughness = roughnessLinear;
+    }
+#else
+    Vec2f Xi = hammersley( i, numSamples );
+
     float roughness = roughnessLinear * roughnessLinear;
     float Phi = 2.0 * PI * Xi[0];
     float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
@@ -968,9 +990,71 @@ inline Vec3f importanceSampleGGX( const Vec2f& Xi, float roughnessLinear, const 
     H[0] = SinTheta * cos( Phi );
     H[1] = SinTheta * sin( Phi );
     H[2] = CosTheta;
+    H.normalize();
+    cacheImportanceSampleGGX[i] = H;
+#endif
+    return cacheImportanceSampleGGX[i];
+}
 
-// Tangent to world space
-    return TangentX * H[0] + TangentY * H[1] + N * H[2];
+
+static Vec3f cachePrecomputedLightSample[65536];
+static float cachePrecomputedLightRoughness = -1;
+
+
+inline const Vec3f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned int numSamples, float roughnessLinear )
+{
+#if 1
+
+    // we use a trigger to reset the cache if needed
+    if ( cachePrecomputedLightRoughness != roughnessLinear ) {
+
+        // https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
+        // in local space view == normal == 0,0,1
+        const Vec3f V = Vec3f(0,0,1);
+
+        // do the computation in local space and store the computed light vector L
+        // in local space. It will be transformed in the main loop from tangent space
+        for ( unsigned int a = 0; a < numSamples; a++ ) {
+            Vec2f Xi = hammersley( a, numSamples );
+
+            float roughness = roughnessLinear * roughnessLinear;
+            float Phi = 2.0 * PI * Xi[0];
+            float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
+            float SinTheta = sqrt( 1.0 - CosTheta * CosTheta );
+            Vec3f H;
+            H[0] = SinTheta * cos( Phi );
+            H[1] = SinTheta * sin( Phi );
+            H[2] = CosTheta;
+            H.normalize();
+
+            Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
+            L.normalize();
+
+            cachePrecomputedLightSample[a] = L;
+        }
+        cachePrecomputedLightRoughness = roughnessLinear;
+    }
+#else
+    // in local space view == normal == 0,0,1
+    const Vec3f V = Vec3f(0,0,1);
+    Vec2f Xi = hammersley( i, numSamples );
+
+    float roughness = roughnessLinear * roughnessLinear;
+    float Phi = 2.0 * PI * Xi[0];
+    float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
+    float SinTheta = sqrt( 1.0 - CosTheta * CosTheta );
+    Vec3f H;
+    H[0] = SinTheta * cos( Phi );
+    H[1] = SinTheta * sin( Phi );
+    H[2] = CosTheta;
+    H.normalize();
+
+    Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
+    L.normalize();
+
+    cachePrecomputedLightSample[i] = L;
+#endif
+    return cachePrecomputedLightSample[i];
 }
 
 

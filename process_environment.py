@@ -103,6 +103,7 @@ class ProcessEnvironment(object):
         self.can_comppress = True if which(compress_7Zip_cmd) != None else False
 
         self.config = {'textures': []}
+        self.config['writeByChannel'] = self.write_by_channel
         self.textures = {}
 
     def writeConfig(self):
@@ -154,6 +155,9 @@ class ProcessEnvironment(object):
                 # break
 
     def cubemap_fix_border(self, input, output):
+        import shutil
+        shutil.copyfile(input, output)
+        return
         cmd = "{} {} {}".format(seamlessCubemap_cmd, input, output)
         execute_command(cmd)
 
