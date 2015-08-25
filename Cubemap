@@ -77,8 +77,8 @@ struct Cubemap {
 
     bool loadMipMap(const std::string& filenamePattern);
 
-    Vec3f prefilterEnvMapUE4( float roughness, const Vec3f& R, uint numSamples ) const;
-    Vec3f averageEnvMap( float roughnessLinear, const Vec3f& R, uint numSamples ) const;
+    Vec3f prefilterEnvMapUE4( const Vec3f& R, uint numSamples ) const;
+    Vec3f averageEnvMap( const Vec3f& R, uint numSamples ) const;
 
 
     void getSample(const Vec3f& direction, Vec3f& color ) const;

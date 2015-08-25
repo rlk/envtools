@@ -14,10 +14,6 @@
 
 OIIO_NAMESPACE_USING
 
-// stats
-static uint statsTotalSamples = 0;
-static uint statsTotalSamplesHit = 0;
-
 void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, int fixup = 0);
 void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u, float& v);
 
@@ -537,7 +533,7 @@ void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int s
 
         // generate debug color cubemap after limit size
         if ( i <= endMipMap ) {
-            std::cout << "compute level " << i << " with roughness " << roughnessLinear << " " << size << " x " << size << " to " << ss.str();
+            std::cout << "compute level " << i << " with roughness " << roughnessLinear << " " << size << " x " << size << " to " << ss.str() << std::endl;
             cubemap.computePrefilterCubemapAtLevel( roughnessLinear, *this, nbSamples, fixup);
         } else {
             cubemap.fill(Vec4f(1.0,0.0,1.0,1.0));
@@ -547,37 +543,28 @@ void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int s
 }
 
 void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubemap& inputCubemap, uint nbSamples, bool fixup ) {
+
     roughnessLinear = clampTo(roughnessLinear, 0.0f, 1.0f);
+
+    if ( roughnessLinear == 0.0 )
+        nbSamples = 1;
+
+    precomputedLightInLocalSpace( nbSamples, roughnessLinear, inputCubemap.getSize() );
+
     iterateOnFace(0, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(1, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(2, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(3, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(4, roughnessLinear, inputCubemap, nbSamples, fixup);
     iterateOnFace(5, roughnessLinear, inputCubemap, nbSamples, fixup);
-
-    std::cout << "nSamples " << statsTotalSamples << " ratio hits " << statsTotalSamplesHit*1.0/statsTotalSamples * 100.0 <<"%" << std::endl;
-    statsTotalSamples = 0;
-    statsTotalSamplesHit = 0;
 }
 
 
 void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup, bool backgroundAverage ) {
 
-    // more the roughness is and more the solid angle is big
-    // so we want to adapt the number of sample depends on roughness
-    // eg for a cubemap a solid angle of 180 means 3 times the pixel area
-    // size*size*3 is the maximum sample
-    uint numSamples = 1 << uint(floor( log2(nbSamples ) ));
 
-    if ( roughnessLinear == 0.0 )
-        numSamples = 1;
-
-    if ( face == 0 )
-        std::cout << " " << numSamples << " samples" << std::endl;
-
+    // find native resolution to copy pixel
     uint size = getSize();
-
-
     uint nativeResolution = 0;
     for ( uint i = 0; i < cubemap._levels.size(); i++) {
         if ( cubemap.getImages(i).getSize() == size ) {
@@ -585,7 +572,6 @@ void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cu
             break;
         }
     }
-
     float* dataFace = getImages().imageFace(face);
 
     for ( uint j = 0; j < size; j++ ) {
@@ -594,57 +580,20 @@ void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cu
 #pragma omp parallel for
         for ( uint i = 0; i < size; i++ ) {
 
+            Vec3f direction, resultColor;
             int index = lineIndex + i*getSamplePerPixel();
-            Vec3f direction;
 
             texelCoordToVect( face, float(i), float(j), size, &direction[0], fixup ? 1 : 0 );
 
-#if 0
-            int faceIndex = -1;
-            float u , v;
-            vectToTexelCoord(direction, cubemap.getSize(), faceIndex, u,v );
-            // std::cout << "u: " << u << " " << float(i) << " " << cubemap.getSize() << std::endl;
-            // std::cout << "v: " << v << " " << float(j) << " " << cubemap.getSize() << std::endl;
-
-            Vec3f c0;
-            cubemap.getSample(direction, c0);
-            const float* ptr = &cubemap._images[face][j*getSamplePerPixel()*cubemap.getSize() + i*getSamplePerPixel()];
-            // std::cout << "r: " << ptr[0] << " " << c0[0] << std::endl;
-            // std::cout << "g: " << ptr[1] << " " << c0[1] << std::endl;
-            // std::cout << "b: " << ptr[2] << " " << c0[2] << std::endl;
-
-            if ( !(ptr[0] == c0[0]) ||
-                 !(ptr[1] == c0[1]) ||
-                 !(ptr[2] == c0[2]) ) {
-                std::cout << "face: " << face << " " << faceIndex << std::endl;
-                std::cout << "u: " << u << " " << float(i) << " " << cubemap.getSize() << std::endl;
-                std::cout << "v: " << v << " " << float(j) << " " << cubemap.getSize() << std::endl;
-
-                std::cout << "r: " << ptr[0] << " " << c0[0] << std::endl;
-                std::cout << "g: " << ptr[1] << " " << c0[1] << std::endl;
-                std::cout << "b: " << ptr[2] << " " << c0[2] << std::endl;
-
-            }
-            assert ( ptr[0] == c0[0] );
-            assert ( ptr[1] == c0[1] );
-            assert ( ptr[2] == c0[2] );
-            // assert( u == float(i) );
-            // assert( v == float(j) );
-            // assert( faceIndex == face );
-
-#endif
-
-            Vec3f resultColor;
-
-            if ( roughnessLinear == 0.0 || numSamples == 1) { // use a copy from the good mipmap level
-                cubemap.getSampleLOD(nativeResolution, direction, resultColor);
+            if ( roughnessLinear == 0.0 || nbSamples == 1) { // use a copy from the good mipmap level
+                cubemap.getImages(nativeResolution).getSample( direction, resultColor);
 
             } else {
 
                 if ( backgroundAverage ) {
-                    resultColor = cubemap.averageEnvMap( roughnessLinear, direction, numSamples );
+                    resultColor = cubemap.averageEnvMap( direction, nbSamples );
                 } else {
-                    resultColor = cubemap.prefilterEnvMapUE4( roughnessLinear, direction, numSamples );
+                    resultColor = cubemap.prefilterEnvMapUE4( direction, nbSamples );
                 }
 
             }
@@ -653,23 +602,12 @@ void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cu
             dataFace[ index + 1 ] = resultColor[1];
             dataFace[ index + 2 ] = resultColor[2];
 
-            //std::cout << "face " << face << " processing " << i << "x" << j << std::endl;
-#if 0
-            //sample( direction, resultColor );
-            Vec3f diff = (color - resultColor);
-            if ( fabs(diff[0]) > 1e-6 || fabs(diff[1]) > 1e-6 || fabs(diff[2]) > 1e-6 ) {
-                std::cout << "face " << face << " " << i << "x" << j << " color error " << diff[0] << " " << diff[1] << " " << diff[2] << std::endl;
-                std::cout << "direction " << direction[0] << " " << direction[1] << " " << direction[2]  << std::endl;
-                return;
-            }
-#endif
-
         }
     }
 }
 
 
-void Cubemap::computeBackground( const std::string& output, int startSize, uint nbSamples, float roughnessLinear , const bool fixup ) {
+void Cubemap::computeBackground( const std::string& output, int startSize, uint nbSamples, float radius , const bool fixup ) {
 
     int computeStartSize = startSize;
     if (!computeStartSize)
@@ -680,18 +618,30 @@ void Cubemap::computeBackground( const std::string& output, int startSize, uint 
     int size = computeStartSize;
     cubemap.init( size );
 
-    roughnessLinear = clampTo(roughnessLinear, 0.0f, 1.0f);
-    cubemap.iterateOnFace(0, roughnessLinear, *this, nbSamples, fixup, true);
-    cubemap.iterateOnFace(1, roughnessLinear, *this, nbSamples, fixup, true);
-    cubemap.iterateOnFace(2, roughnessLinear, *this, nbSamples, fixup, true);
-    cubemap.iterateOnFace(3, roughnessLinear, *this, nbSamples, fixup, true);
-    cubemap.iterateOnFace(4, roughnessLinear, *this, nbSamples, fixup, true);
-    cubemap.iterateOnFace(5, roughnessLinear, *this, nbSamples, fixup, true);
+    radius = clampTo(radius, 0.0f, 1.0f);
+
+    // http://stackoverflow.com/questions/17841098/gaussian-blur-standard-deviation-radius-and-kernel-size
+    // http://www.researchgate.net/post/Calculate_the_Gaussian_filters_sigma_using_the_kernels_size
+    // http://stackoverflow.com/questions/8204645/implementing-gaussian-blur-how-to-calculate-convolution-matrix-kernel
+
+    // we are not in pixel but in distance on a circle
+    //n /= blurSize;
+    float sigma = radius/3.0; // 3*sigma rules
+    float sigmaSqr = sigma * sigma;
+
+    precomputeUniformSampleOnCone( nbSamples, radius, sigmaSqr );
+
+    cubemap.iterateOnFace(0, radius, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(1, radius, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(2, radius, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(3, radius, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(4, radius, *this, nbSamples, fixup, true);
+    cubemap.iterateOnFace(5, radius, *this, nbSamples, fixup, true);
 
     cubemap.write( output.c_str() );
 }
 
-Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const uint numSamples2 ) const
+Vec3f Cubemap::prefilterEnvMapUE4( const Vec3f& R, const uint numSamples ) const
 {
 
     Vec3f N = R;
@@ -701,95 +651,77 @@ Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const 
     double totalWeight = 0;
     Vec3f color;
 
-    uint textureSize = getSize();
-
     Vec3f UpVector = fabs(N[2]) < 0.999 ? Vec3f(0,0,1) : Vec3f(1,0,0);
     Vec3f TangentX = normalize( cross( UpVector, N ) );
     Vec3f TangentY = normalize( cross( N, TangentX ) );
 
-    unsigned int numSamples = numSamples2;
-    statsTotalSamples += numSamples;
-
     bool useLod = _levels.size() > 1;
 
-    if ( !roughnessLinear ) {
-        std::cout << "You should not be in Cubemap::prefilterEnvMapUE4 with roughness 0.0" << std::endl;
-        getSample( R, color );
-        return color;
-    }
+    // see getPrecomputedLightInLocalSpace in Math
+    // and https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
+    // for the simplification
 
+    Vec3f LworldSpace;
+    if (useLod) {
 
-    for( uint i = 0; i < numSamples; i++ ) {
+        // optimized lod version
+        for( uint i = 0; i < numSamples; i++ ) {
+            // vec4 contains the light vector + miplevel
+            const Vec4f& L = getPrecomputedLightInLocalSpace( i );
+            float precomputedLod = L[3];
+            float NoL = L[2];
+            LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
 
-        // see getPrecomputedLightInLocalSpace in Math
-        // and https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
-        // for the simplification
-
-        // vec4 contains the light vector + miplevel
-        const Vec4f& L = getPrecomputedLightInLocalSpace( i, numSamples, roughnessLinear, textureSize);
-        float precomputedLod = L[3];
-        float NoL = L[2];
-
-        if( NoL > 0.0 ) {
-            statsTotalSamplesHit++;
-            Vec3f LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
-
-            if (useLod)
-                getSampleLOD( precomputedLod, LworldSpace, color );
-            else
-                getSample( LworldSpace, color );
+            getSampleLOD( precomputedLod, LworldSpace, color );
 
             prefilteredColor += Vec3d( color * NoL );
-            totalWeight += NoL;
+            totalWeight+=NoL;
+        }
+        return prefilteredColor / totalWeight;
+
+    } else {
+
+        // no lod version
+        for( uint i = 0; i < numSamples; i++ ) {
+            // vec4 contains the light vector + miplevel
+            const Vec4f& L = getPrecomputedLightInLocalSpace( i );
+            float NoL = L[2];
+            LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
+
+            getSample( LworldSpace, color );
+
+            prefilteredColor += Vec3d( color * NoL );
         }
     }
 
-    return prefilteredColor / totalWeight;
+    return prefilteredColor / getPrecomputedLightTotalWeight();
 }
 
 
 // same but do a average to compute the background blur
-Vec3f Cubemap::averageEnvMap( float blurSize, const Vec3f& R, const uint numSamples2 ) const {
+Vec3f Cubemap::averageEnvMap( const Vec3f& R, const uint numSamples ) const {
+
     Vec3f N = R;
     Vec3d prefilteredColor = Vec3d(0,0,0);
-
-    Vec3f color;
-
-    // only one sample copy
-    if ( numSamples2 == 1 ) {
-        std::cout << "You should not be in Cubemap::averageEnvMap with 1 sample" << std::endl;
-        getSample( R, color );
-        return color;
-    }
+    Vec3f color,direction;
 
     Vec3f UpVector = fabs(N[2]) < 0.999 ? Vec3f(0,0,1) : Vec3f(1,0,0);
     Vec3f TangentX = normalize( cross( UpVector, N ) );
     Vec3f TangentY = normalize( cross( N, TangentX ) );
 
-    // http://stackoverflow.com/questions/17841098/gaussian-blur-standard-deviation-radius-and-kernel-size
-    // http://www.researchgate.net/post/Calculate_the_Gaussian_filters_sigma_using_the_kernels_size
-    // http://stackoverflow.com/questions/8204645/implementing-gaussian-blur-how-to-calculate-convolution-matrix-kernel
-
-    // we are not in pixel but in distance on a circle
-    //n /= blurSize;
-    float sigma = blurSize/3.0; // 3*sigma rules
-    float sigmaSqr = sigma * sigma;
-
-    float wSum = 0.0;
-    unsigned int numSamples = numSamples2;
     for( uint i = 0; i < numSamples; i++ ) {
-        Vec2f Xi = hammersley( i, numSamples );
 
-        float w;
-        // Tangent to world space
-        Vec3f H =  uniformSampleOnCone( Xi, blurSize, N, TangentX, TangentY, sigmaSqr, w);
+        // vec4 contains direction and weight
+        const Vec4f& H =  getUniformSampleOnCone( i );
 
-        getSample( H, color );
-        prefilteredColor += color*w;
-        wSum += w;
+        // localspace to world space
+        direction = TangentX * H[0] + TangentY * H[1] + N * H[2];
+
+        getSample( direction, color );
+        prefilteredColor += color * H[3];
     }
 
-    return prefilteredColor / wSum;
+    return prefilteredColor / getUniformSampleOnConeWeightSum();
 }
 
 

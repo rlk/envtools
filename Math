@@ -6,6 +6,7 @@
 #ifndef MATH_H
 #define MATH_H 1
 
+#include <iostream>
 #include <cmath>
 #include <cfloat>
 #include <algorithm>
@@ -1011,67 +1012,17 @@ inline float D_GGX( float NdotH, float alpha)
 
 static Vec4f cachePrecomputedLightSample[65536];
 static float cachePrecomputedLightRoughness = -1;
+static double cachePrecomputedLightTotalWeight = 0.0;
 
-
-inline const Vec4f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned int numSamples, float roughnessLinear, uint size = 0 )
+inline bool computeLightSampleInLocalSpace(uint i, uint numSamples, uint size, float roughnessLinear, Vec4f& result)
 {
-#if 1
+    // do the computation in local space and store the computed light vector L
+    // in local space. It will be transformed in the main loop from tangent space
 
-    // we use a trigger to reset the cache if needed
-    if ( cachePrecomputedLightRoughness != roughnessLinear ) {
-
-        // https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
-        // in local space view == normal == 0,0,1
-        const Vec3f V = Vec3f(0,0,1);
-        float fOmegaP = 4.0 * PI / ( 6.0 * size * size);
-
-
-        // do the computation in local space and store the computed light vector L
-        // in local space. It will be transformed in the main loop from tangent space
-        for ( unsigned int a = 0; a < numSamples; a++ ) {
-            Vec2f Xi = hammersley( a, numSamples );
-
-            float roughness = roughnessLinear * roughnessLinear;
-            float Phi = 2.0 * PI * Xi[0];
-            float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
-            float SinTheta = sqrt( 1.0 - CosTheta * CosTheta );
-            Vec3f H;
-            H[0] = SinTheta * cos( Phi );
-            H[1] = SinTheta * sin( Phi );
-            H[2] = CosTheta;
-            H.normalize();
-
-            Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
-            L.normalize();
-
-            // H[2] is NoH in local space
-            // adds 1.e-5 to avoid D_GGX / 0.0
-            float NoH = H[2] + 1.e-5;
-
-
-            // Vectors to evaluate pdf
-            float VoH = NoH;
-
-            // Probability Distribution Function
-            float Pdf = D_GGX(NoH, roughnessLinear) * NoH / (4.0f * VoH);
-
-            // Solid angle represented by this sample
-            float fOmegaS = 1.0 / (numSamples * Pdf);
-
-            // Solid angle covered by 1 pixel with 6 faces that are EnvMapSize X EnvMapSize
-            //float fOmegaP = 4.0 * PI / ( 6.0 * 1024 * 1024);
-
-            // Original paper suggest biasing the mip to improve the results
-            float fMipBias = 1.0f; // I tested that the result is better with bias 1
-            float fMipLevel = std::max(0.5 * log2(fOmegaS / fOmegaP) + fMipBias, 0.0);
-
-            cachePrecomputedLightSample[a] = Vec4f(L[0], L[1], L[2], fMipLevel );
-        }
-        cachePrecomputedLightRoughness = roughnessLinear;
-    }
-#else
+    // https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
     // in local space view == normal == 0,0,1
-    const Vec3f V = Vec3f(0,0,1);
+    static const Vec3f V = Vec3f(0,0,1);
+
     Vec2f Xi = hammersley( i, numSamples );
 
     float roughness = roughnessLinear * roughnessLinear;
@@ -1087,56 +1038,146 @@ inline const Vec4f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned in
     Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
     L.normalize();
 
+    float NoL = L[2];
+    if ( NoL <= 0.0f ) return false;
+
     // H[2] is NoH in local space
     // adds 1.e-5 to avoid D_GGX / 0.0
     float NoH = H[2] + 1.e-5;
 
-    cachePrecomputedLightSample[i] = Vec4f(L[0], L[1], L[2], NoH );
-#endif
+    // data to evaluate pdf
+    float VoH = NoH;
+
+    // Probability Distribution Function
+    float Pdf = D_GGX(NoH, roughnessLinear) * NoH / (4.0f * VoH);
+
+    // Solid angle represented by this sample
+    float omegaS = 1.0 / (numSamples * Pdf);
+
+    // Solid angle covered by 1 pixel with 6 faces that are EnvMapSize X EnvMapSize
+    const float omegaP = 4.0 * PI / ( 6.0 * size * size);
+
+    // Original paper suggest biasing the mip to improve the results
+    float mipBias = 1.0f; // I tested that the result is better with bias 1
+    float mipLevel = std::max(0.5 * log2(omegaS / omegaP) + mipBias, 0.0);
+
+    result[0] = L[0];
+    result[1] = L[1];
+    result[2] = L[2];
+    result[3] = mipLevel;
+
+    return true;
+}
+
+
+inline void precomputedLightInLocalSpace( uint numSamples, float roughnessLinear, uint size = 0 )
+{
+    if ( cachePrecomputedLightRoughness != roughnessLinear ) {
+
+        Vec4f result;
+        uint tryNumSamples = numSamples;
+        bool found = false;
+        uint nbTry = 0;
+        while ( !found ) {
+            nbTry++;
+            uint count = 0;
+            uint index = 0;
+            // find the sequence to have desired sample hit NoL condition
+            cachePrecomputedLightTotalWeight = 0.0;
+            for ( uint a = 0; a < tryNumSamples; a++ ) {
+                if ( computeLightSampleInLocalSpace(a, tryNumSamples, size, roughnessLinear, result ) ) {
+                    count++;
+                    cachePrecomputedLightSample[index++] = result;
+                    cachePrecomputedLightTotalWeight += result[2]; // accumulate totalWeight
+                }
+            }
+            if ( count == numSamples ) found = true;
+            else {
+                tryNumSamples += numSamples - count;
+            }
+        }
+        std::cout << "found the sequence " << tryNumSamples << " to generate " << numSamples << " samples valid in " << nbTry << " try" << std::endl;
+
+        cachePrecomputedLightRoughness = roughnessLinear;
+
+    }
+}
+// heuristics to compute faster samples
+// roughness 0.2 ratio hits 99.8535%
+// roughness 0.4 ratio hits 97.5098%
+// roughness 0.6 ratio hits 88.5742%
+// roughness 0.8 ratio hits 70.9473%
+// roughness 1   ratio hits 50%
+
+inline const Vec4f& getPrecomputedLightInLocalSpace( unsigned int i )
+{
+    // we use a trigger to reset the cache if needed
     return cachePrecomputedLightSample[i];
 }
 
-
-inline Vec3f uniformSampleOnCone( const Vec2f& Xi, const float radius, const Vec3f& N, const Vec3f& TangentX, const Vec3f& TangentY, const float sigmaSqr, float& weight )
+inline const double& getPrecomputedLightTotalWeight()
 {
-
-
-    //  http://jsfiddle.net/d9VRu/
-    float u = Xi[0];
-    float v = Xi[1];
-    float angle = u * PI * 2.0;
-
-    // uniform
-    float r = sqrtf( v ) * radius;
-
-    // not uniform
-    //float r = v * radius;
-
-    float x = r * cosf(angle);
-    float y = r * sinf(angle);
-
-    // compute gaussian weight
-    // https://en.wikipedia.org/wiki/Gaussian_blur
-    // http://stackoverflow.com/questions/17841098/gaussian-blur-standard-deviation-radius-and-kernel-size
-    // http://http.developer.nvidia.com/GPUGems3/gpugems3_ch40.html
-    //float standardDeviation = 0.84089642;
-    //float sigmaSqr = sigma*sigma;
-    // weight = exp(-(x*x + y*y)/twoStandardDeviationSqr)/( PI * twoStandardDeviationSqr );
-    weight = exp(-0.5*(x*x + y*y)/sigmaSqr);
-
-
-
-    Vec3f H;
-    H[0] = x;
-    H[1] = y;
-    H[2] = 1.0;
-
-    H.normalize();
-
-// Tangent to world space
-    return TangentX * H[0] + TangentY * H[1] + N * H[2];
+    // we use a trigger to reset the cache if needed
+    return cachePrecomputedLightTotalWeight;
 }
 
+
+static Vec4f cachePrecomputedUniformSampleOnCone[65536];
+static uint cachePrecomputedUniformSampleOnConeNbSamples = 0;
+static double cachePrecomputedUniformSampleOnConeWeightSum = 0.0;
+
+inline void precomputeUniformSampleOnCone( uint numSamples, const float radius, const float sigmaSqr )
+{
+    if ( cachePrecomputedUniformSampleOnConeNbSamples != numSamples ) {
+        cachePrecomputedUniformSampleOnConeNbSamples = numSamples;
+        double wSum = 0.0;
+        for ( uint i = 0; i < numSamples; i++ ) {
+
+            Vec2f Xi = hammersley( i, numSamples );
+
+            //  http://jsfiddle.net/d9VRu/
+            float u = Xi[0];
+            float v = Xi[1];
+            float angle = u * PI * 2.0;
+
+            // uniform
+            float r = sqrtf( v ) * radius;
+
+            // not uniform
+            //float r = v * radius;
+
+            float x = r * cosf(angle);
+            float y = r * sinf(angle);
+
+            // compute gaussian weight
+            // https://en.wikipedia.org/wiki/Gaussian_blur
+            // http://stackoverflow.com/questions/17841098/gaussian-blur-standard-deviation-radius-and-kernel-size
+            // http://http.developer.nvidia.com/GPUGems3/gpugems3_ch40.html
+            //float standardDeviation = 0.84089642;
+            //float sigmaSqr = sigma*sigma;
+            // weight = exp(-(x*x + y*y)/twoStandardDeviationSqr)/( PI * twoStandardDeviationSqr );
+            double weight = exp(-0.5*(x*x + y*y)/sigmaSqr);
+
+            Vec3f H;
+            H[0] = x;
+            H[1] = y;
+            H[2] = 1.0;
+            H.normalize();
+
+            cachePrecomputedUniformSampleOnCone[i] = Vec4f( H[0], H[1], H[2], (float)weight );
+            wSum += weight;
+        }
+        cachePrecomputedUniformSampleOnConeWeightSum = wSum;
+    }
+}
+
+inline const Vec4f& getUniformSampleOnCone(uint i) {
+    return cachePrecomputedUniformSampleOnCone[i];
+}
+
+inline const double& getUniformSampleOnConeWeightSum() {
+    return cachePrecomputedUniformSampleOnConeWeightSum;
+}
 
 // vec3 hemisphereSample_uniform(float u, float v) {
 //      float phi = v * 2.0 * PI;
