@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
         output = std::string( argv[optind+1] );
 
         Cubemap cubemap;
-        cubemap.loadCubemap(input);
+        cubemap.load(input);
         Cubemap* result = cubemap.shFilterCubeMap( true, fixup, n );
         result->write(output);
         delete result;

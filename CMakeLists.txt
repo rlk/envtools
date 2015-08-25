@@ -55,13 +55,6 @@ install(TARGETS envIrradiance
   RUNTIME DESTINATION bin
 )
 
-add_executable(seamlessCubemap seamlessCubemap.cpp  Cubemap.cpp)
-target_link_libraries(seamlessCubemap ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
-
-install(TARGETS seamlessCubemap
-  RUNTIME DESTINATION bin
-)
-
 add_executable(cubemapPacker cubemapPacker.cpp  Cubemap.cpp)
 target_link_libraries(cubemapPacker ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 

@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #include <cmath>
 #include <iostream>
 #include <sstream>
@@ -22,13 +23,25 @@ void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u
 
 Cubemap::Cubemap()
 {
+    _levels.resize(1);
+}
+
+
+Cubemap::~Cubemap()
+{
+}
+
+
+Cubemap::MipLevel::MipLevel()
+{
     _size = 0;
     for ( int i = 0; i < 6; i++ ) {
         _images[i] = 0;
     }
 }
 
-Cubemap::~Cubemap()
+
+Cubemap::MipLevel::~MipLevel()
 {
     for ( int i = 0; i < 6; i++ ) {
         if ( _images[i] )
@@ -36,11 +49,11 @@ Cubemap::~Cubemap()
     }
 }
 
-void Cubemap::init( int size, int sample )
+
+void Cubemap::MipLevel::init( uint size, uint sample )
 {
     _size = size;
     _samplePerPixel = sample;
-
     for ( int i = 0; i < 6; i++ ) {
         if (_images[i])
             delete [] _images[i];
@@ -48,28 +61,37 @@ void Cubemap::init( int size, int sample )
     }
 }
 
-void Cubemap::fill( const Vec4f& fill )
+
+void Cubemap::Cubemap::init( int size, int sample )
 {
+    _levels[0].init( size, sample );
+}
+
+void Cubemap::fill( const Vec4f& fillValue )
+{
+    uint size = getSize();
+    uint samplePerPixel = getSamplePerPixel();
+    uint totalFloat = size * size * samplePerPixel;;
+
     for ( int i = 0; i < 6; i++ ) {
-        if (_images[i]) {
+        float* data = getImages().imageFace(i);
 
-            if ( _samplePerPixel > 3 ) {
-                for ( int j = 0; j < _size*_size; j += _samplePerPixel ) {
-                    _images[i][j] = fill[0];
-                    _images[i][j+1] = fill[1];
-                    _images[i][j+2] = fill[2];
-                    _images[i][j+3] = fill[3];
-                }
-
-            } else {
-
-                for ( int j = 0; j < _size*_size; j += _samplePerPixel ) {
-                    _images[i][j] = fill[0];
-                    _images[i][j+1] = fill[1];
-                    _images[i][j+2] = fill[2];
-                }
-
+        if ( samplePerPixel > 3 ) {
+            for ( uint j = 0; j < totalFloat; j += samplePerPixel ) {
+                data[j]   = fillValue[0];
+                data[j+1] = fillValue[1];
+                data[j+2] = fillValue[2];
+                data[j+3] = fillValue[3];
             }
+
+        } else {
+
+            for ( uint j = 0; j < totalFloat; j += samplePerPixel ) {
+                data[j]   = fillValue[0];
+                data[j+1] = fillValue[1];
+                data[j+2] = fillValue[2];
+            }
+
         }
     }
 }
@@ -139,56 +161,9 @@ void EvalSHBasis(const float* dir, double* res )
 
 
 
-// major axis
-// direction     target                              sc     tc    ma
-// ----------    ---------------------------------   ---    ---   ---
-//  +rx          GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT   -rz    -ry   rx
-//  -rx          GL_TEXTURE_CUBE_MAP_NEGATIVE_X_EXT   +rz    -ry   rx
-//  +ry          GL_TEXTURE_CUBE_MAP_POSITIVE_Y_EXT   +rx    +rz   ry
-//  -ry          GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_EXT   +rx    -rz   ry
-//  +rz          GL_TEXTURE_CUBE_MAP_POSITIVE_Z_EXT   +rx    -ry   rz
-//  -rz          GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_EXT   -rx    -ry   rz
-// s   =   ( sc/|ma| + 1 ) / 2
-// t   =   ( tc/|ma| + 1 ) / 2
-
-void Cubemap::sample(const Vec3f& direction, Vec3f& color ) const {
-
-
-    int bestAxis = 0;
-    if ( fabs(direction[1]) > fabs(direction[0]) ) {
-        bestAxis = 1;
-        if ( fabs(direction[2]) > fabs(direction[1]) )
-            bestAxis = 2;
-    } else if ( fabs(direction[2]) > fabs(direction[0]) )
-        bestAxis = 2;
-
-    // select the index of cubemap face
-    int index = bestAxis*2 + ( direction[bestAxis] > 0 ? 0 : 1 );
-    double bestAxisValue = direction[bestAxis];
-    double denom = fabs( bestAxisValue );
-    double maInv = 1.0/denom;
-
-    double sc = CubemapFace[index][0] * direction;
-    double tc = CubemapFace[index][1] * direction;
-
-    // map into uv (st) [0, 1]
-    double s = (sc * maInv + 1.0) * 0.5;
-    double t = (tc * maInv + 1.0) * 0.5;
-
-    int px = int( floor( s * _size ) ); // width == height
-    int py = int( floor( t * _size ) ); // width == height
-
-    //std::cout << " px " << px << " py " << py << std::endl;
-
-    // it's not a nearest even a bilinear
-    int indexPixel = ( py * _size + px ) * _samplePerPixel;
-    float r = _images[ index ][ indexPixel ];
-    float g = _images[ index ][ indexPixel + 1 ];
-    float b = _images[ index ][ indexPixel + 2 ];
-    color[0] = r;
-    color[1] = g;
-    color[2] = b;
-    //std::cout << "face " << index << " color " << r << " " << g << " " << b << std::endl;
+void Cubemap::getSample(const Vec3f& direction, Vec3f& color ) const
+{
+    _levels[0].getSample(direction, color);
 }
 
 /** Original code from Ignacio Castaño
@@ -203,7 +178,7 @@ static float AreaElement( float x, float y )
     return atan2(x * y, sqrt(x * x + y * y + 1));
 }
 
-float Cubemap::texelCoordSolidAngle(int faceIdx, float aU, float aV)
+float Cubemap::MipLevel::texelCoordSolidAngle(uint faceIdx, float aU, float aV) const
 {
     // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
     // (+ 0.5f is for texel center addressing)
@@ -224,12 +199,22 @@ float Cubemap::texelCoordSolidAngle(int faceIdx, float aU, float aV)
     return SolidAngle;
 }
 
+float Cubemap::texelCoordSolidAngle(uint faceIdx, float aU, float aV) const
+{
+    return _levels[0].texelCoordSolidAngle(faceIdx, aU, aV);
+}
 
-void Cubemap::buildNormalizerSolidAngleCubemap(int size, int fixup)
+
+void Cubemap::buildNormalizerSolidAngleCubemap(uint size, int fixup)
+{
+    _levels[0].buildNormalizerSolidAngleCubemap(size, fixup);
+}
+
+void Cubemap::MipLevel::buildNormalizerSolidAngleCubemap(uint size, int fixup)
 {
 
     init(size, 4);
-    int iCubeFace, u, v;
+    uint iCubeFace, u, v;
 
     //iterate over cube faces
     for (iCubeFace=0; iCubeFace<6; iCubeFace++) {
@@ -257,8 +242,8 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     Cubemap* dstCubemap = new Cubemap();
     dstCubemap->init(outputCubemapSize, 3 );
 
-    int srcSize = srcCubemap->_size;
-    int dstSize = dstCubemap->_size;
+    int srcSize = srcCubemap->getSize();
+    int dstSize = dstCubemap->getSize();
 
     //pointers used to walk across the image surface
     float *normCubeRowStartPtr;
@@ -266,8 +251,8 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     float *dstCubeRowStartPtr;
     float *texelVect;
 
-    const int srcCubeMapNumChannels	= srcCubemap->_samplePerPixel;
-    const int dstCubeMapNumChannels	= dstCubemap->_samplePerPixel; //DstCubeImage[0].m_NumChannels;
+    const int srcCubeMapNumChannels	= srcCubemap->getSamplePerPixel();
+    const int dstCubeMapNumChannels	= dstCubemap->getSamplePerPixel(); //DstCubeImage[0].m_NumChannels;
 
     //First step - Generate SH coefficient for the diffuse convolution
 
@@ -281,9 +266,9 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     Cubemap normCubemap = Cubemap();
 
     //Normalized vectors per cubeface and per-texel solid angle
-    normCubemap.buildNormalizerSolidAngleCubemap(srcCubemap->_size, fixup);
+    normCubemap.buildNormalizerSolidAngleCubemap(srcCubemap->getSize(), fixup);
 
-    const int normCubeMapNumChannels = normCubemap._samplePerPixel; // This need to be init here after the generation of m_NormCubeMap
+    const int normCubeMapNumChannels = normCubemap.getSamplePerPixel(); // This need to be init here after the generation of m_NormCubeMap
 
     //This is a custom implementation of D3DXSHProjectCubeMap to avoid to deal with LPDIRECT3DSURFACE9 pointer
     //Use Sh order 2 for a total of 9 coefficient as describe in http://www.cs.berkeley.edu/~ravir/papers/envmap/
@@ -306,8 +291,8 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     {
         for (int y = 0; y < srcSize; y++)
         {
-            normCubeRowStartPtr = &normCubemap._images[iFaceIdx][ normCubeMapNumChannels * (y * srcSize)];
-            srcCubeRowStartPtr	= &srcCubemap->_images[iFaceIdx][ srcCubeMapNumChannels * (y * srcSize)];
+            normCubeRowStartPtr = &normCubemap.getImages().imageFace(iFaceIdx)[ normCubeMapNumChannels * (y * srcSize)];
+            srcCubeRowStartPtr	= &srcCubemap->getImages().imageFace(iFaceIdx)[ srcCubeMapNumChannels * (y * srcSize)];
 
             for (int x = 0; x < srcSize; x++)
             {
@@ -362,7 +347,7 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
 
     //Normalized vectors per cubeface and per-texel solid angle
     //BuildNormalizerSolidAngleCubemap(DstCubeImage->m_Width, m_NormCubeMap, a_FixupType);
-    normCubemap.buildNormalizerSolidAngleCubemap(dstCubemap->_size, fixup );
+    normCubemap.buildNormalizerSolidAngleCubemap(dstCubemap->getSize(), fixup );
 
 
     // dump spherical harmonics coefficient
@@ -395,8 +380,8 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     {
         for (int y = 0; y < dstSize; y++)
         {
-            normCubeRowStartPtr = &normCubemap._images[iFaceIdx][normCubeMapNumChannels * (y * dstSize)];
-            dstCubeRowStartPtr	= &dstCubemap->_images[iFaceIdx][dstCubeMapNumChannels * (y * dstSize)];
+            normCubeRowStartPtr = &normCubemap.getImages().imageFace(iFaceIdx)[normCubeMapNumChannels * (y * dstSize)];
+            dstCubeRowStartPtr	= &dstCubemap->getImages().imageFace(iFaceIdx)[dstCubeMapNumChannels * (y * dstSize)];
 
             for (int x = 0; x < dstSize; x++)
             {
@@ -429,7 +414,7 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
 }
 
 
-void Cubemap::write( const std::string& filename )
+void Cubemap::MipLevel::write( const std::string& filename ) const
 {
     ImageOutput* out = ImageOutput::create (filename);
 
@@ -440,7 +425,7 @@ void Cubemap::write( const std::string& filename )
     for (int s = 0;  s < 6;  ++s) {
         ImageSpec spec( _size, _size, _samplePerPixel, TypeDesc::FLOAT);
         out->open (filename, spec, appendmode);
-        out->write_image (TypeDesc::FLOAT, _images[s] );
+        out->write_image (TypeDesc::FLOAT, _images[s]);
         // Use AppendSubimage mode for subsequent levels
         appendmode = ImageOutput::AppendSubimage;
     }
@@ -448,8 +433,13 @@ void Cubemap::write( const std::string& filename )
     delete out;
 }
 
+void Cubemap::write( const std::string& filename ) const
+{
+    _levels[0].write(filename);
+}
 
-bool Cubemap::loadCubemap(const std::string& name)
+
+bool Cubemap::MipLevel::load(const std::string& name)
 {
     ImageInput* input = ImageInput::open ( name );
     if ( !input )
@@ -459,7 +449,7 @@ bool Cubemap::loadCubemap(const std::string& name)
         ImageSpec spec;
         input->seek_subimage(i, 0, spec );
 
-        if ( !_size ) {
+        if ( !getSize() ) {
 
             if ( spec.nchannels <3 ) {
                 std::cout << "error your cubemap should have at least 3 channels" << std::endl;
@@ -468,7 +458,7 @@ bool Cubemap::loadCubemap(const std::string& name)
             init( spec.width, spec.nchannels );
         }
 
-        if ( spec.width != spec.height && spec.width != _size ) {
+        if ( spec.width != spec.height && spec.width != getSize() ) {
             std::cout << "Size of sub image " << i << " is not correct" << std::endl;
             return false;
         }
@@ -479,11 +469,47 @@ bool Cubemap::loadCubemap(const std::string& name)
     return true;
 }
 
+bool Cubemap::load(const std::string& filename)
+{
+    return _levels[0].load( filename );
+}
+
+
+bool fileExist(const std::string& name) {
+    struct stat buffer;
+    return (stat (name.c_str(), &buffer) == 0);
+}
+
+bool Cubemap::loadMipMap(const std::string& filenamePattern)
+{
+    std::vector<std::string> filenames;
+    uint maxMipLevel = 30; // should be really enough
+    char str[512];
+    for ( uint i = 0; i < maxMipLevel; i++ ) {
+        int strSize = snprintf( str, 511, filenamePattern.c_str(), i );
+        str[strSize+1] = 0;
+        std::string filename = std::string( str );
+        if ( fileExist(filename) )
+             filenames.push_back( filename );
+    }
+
+    uint nbMipLevel = filenames.size();
+    uint size = pow(2, nbMipLevel-1 );
+    std::cout << "found " << nbMipLevel << " mip level - " <<  size << " x " << size << " cubemap" << std::endl;
+
+    _levels.resize(nbMipLevel);
+    for ( uint i = 0 ; i < nbMipLevel; i++ ) {
+        _levels[i].load(filenames[i]);
+    }
+
+    return true;
+}
+
 void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int startSize, int endSize, uint nbSamples, const bool fixup ) {
 
     int computeStartSize = startSize;
     if (!computeStartSize)
-        computeStartSize = _size;
+        computeStartSize = getSize();
 
     int totalMipmap = log2(computeStartSize);
     int endMipMap = totalMipmap - log2( endSize );
@@ -535,7 +561,7 @@ void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubem
 }
 
 
-void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup, bool backgroundAverage ) {
+void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup, bool backgroundAverage ) {
 
     // more the roughness is and more the solid angle is big
     // so we want to adapt the number of sample depends on roughness
@@ -549,15 +575,26 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
     if ( face == 0 )
         std::cout << " " << numSamples << " samples" << std::endl;
 
-    int size = _size;
+    uint size = getSize();
 
-    for ( int j = 0; j < size; j++ ) {
-        int lineIndex = j*_samplePerPixel*size;
+
+    uint nativeResolution = 0;
+    for ( uint i = 0; i < cubemap._levels.size(); i++) {
+        if ( cubemap.getImages(i).getSize() == size ) {
+            nativeResolution = i;
+            break;
+        }
+    }
+
+    float* dataFace = getImages().imageFace(face);
+
+    for ( uint j = 0; j < size; j++ ) {
+        int lineIndex = j*getSamplePerPixel()*size;
 
 #pragma omp parallel for
-        for ( int i = 0; i < size; i++ ) {
+        for ( uint i = 0; i < size; i++ ) {
 
-            int index = lineIndex + i*_samplePerPixel;
+            int index = lineIndex + i*getSamplePerPixel();
             Vec3f direction;
 
             texelCoordToVect( face, float(i), float(j), size, &direction[0], fixup ? 1 : 0 );
@@ -565,13 +602,13 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
 #if 0
             int faceIndex = -1;
             float u , v;
-            vectToTexelCoord(direction, cubemap._size, faceIndex, u,v );
-            // std::cout << "u: " << u << " " << float(i) << " " << cubemap._size << std::endl;
-            // std::cout << "v: " << v << " " << float(j) << " " << cubemap._size << std::endl;
+            vectToTexelCoord(direction, cubemap.getSize(), faceIndex, u,v );
+            // std::cout << "u: " << u << " " << float(i) << " " << cubemap.getSize() << std::endl;
+            // std::cout << "v: " << v << " " << float(j) << " " << cubemap.getSize() << std::endl;
 
             Vec3f c0;
             cubemap.getSample(direction, c0);
-            const float* ptr = &cubemap._images[face][j*_samplePerPixel*cubemap._size + i*_samplePerPixel];
+            const float* ptr = &cubemap._images[face][j*getSamplePerPixel()*cubemap.getSize() + i*getSamplePerPixel()];
             // std::cout << "r: " << ptr[0] << " " << c0[0] << std::endl;
             // std::cout << "g: " << ptr[1] << " " << c0[1] << std::endl;
             // std::cout << "b: " << ptr[2] << " " << c0[2] << std::endl;
@@ -580,8 +617,8 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
                  !(ptr[1] == c0[1]) ||
                  !(ptr[2] == c0[2]) ) {
                 std::cout << "face: " << face << " " << faceIndex << std::endl;
-                std::cout << "u: " << u << " " << float(i) << " " << cubemap._size << std::endl;
-                std::cout << "v: " << v << " " << float(j) << " " << cubemap._size << std::endl;
+                std::cout << "u: " << u << " " << float(i) << " " << cubemap.getSize() << std::endl;
+                std::cout << "v: " << v << " " << float(j) << " " << cubemap.getSize() << std::endl;
 
                 std::cout << "r: " << ptr[0] << " " << c0[0] << std::endl;
                 std::cout << "g: " << ptr[1] << " " << c0[1] << std::endl;
@@ -598,14 +635,23 @@ void Cubemap::iterateOnFace( int face, float roughnessLinear, const Cubemap& cub
 #endif
 
             Vec3f resultColor;
-            if ( backgroundAverage )
-                resultColor = cubemap.averageEnvMap( roughnessLinear, direction, numSamples );
-            else
-                resultColor = cubemap.prefilterEnvMapUE4( roughnessLinear, direction, numSamples );
 
-            _images[face][ index     ] = resultColor[0];
-            _images[face][ index + 1 ] = resultColor[1];
-            _images[face][ index + 2 ] = resultColor[2];
+            if ( roughnessLinear == 0.0 || numSamples == 1) { // use a copy from the good mipmap level
+                cubemap.getSampleLOD(nativeResolution, direction, resultColor);
+
+            } else {
+
+                if ( backgroundAverage ) {
+                    resultColor = cubemap.averageEnvMap( roughnessLinear, direction, numSamples );
+                } else {
+                    resultColor = cubemap.prefilterEnvMapUE4( roughnessLinear, direction, numSamples );
+                }
+
+            }
+
+            dataFace[ index     ] = resultColor[0];
+            dataFace[ index + 1 ] = resultColor[1];
+            dataFace[ index + 2 ] = resultColor[2];
 
             //std::cout << "face " << face << " processing " << i << "x" << j << std::endl;
 #if 0
@@ -627,7 +673,7 @@ void Cubemap::computeBackground( const std::string& output, int startSize, uint 
 
     int computeStartSize = startSize;
     if (!computeStartSize)
-        computeStartSize = _size;
+        computeStartSize = getSize();
 
     Cubemap cubemap;
 
@@ -645,14 +691,17 @@ void Cubemap::computeBackground( const std::string& output, int startSize, uint 
     cubemap.write( output.c_str() );
 }
 
+Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const uint numSamples2 ) const
+{
 
-Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const uint numSamples2 ) const {
     Vec3f N = R;
-    Vec3f V = R;
+
     Vec3d prefilteredColor = Vec3d(0,0,0);
 
     double totalWeight = 0;
     Vec3f color;
+
+    uint textureSize = getSize();
 
     Vec3f UpVector = fabs(N[2]) < 0.999 ? Vec3f(0,0,1) : Vec3f(1,0,0);
     Vec3f TangentX = normalize( cross( UpVector, N ) );
@@ -661,18 +710,35 @@ Vec3f Cubemap::prefilterEnvMapUE4( float roughnessLinear, const Vec3f& R, const 
     unsigned int numSamples = numSamples2;
     statsTotalSamples += numSamples;
 
+    bool useLod = _levels.size() > 1;
+
+    if ( !roughnessLinear ) {
+        std::cout << "You should not be in Cubemap::prefilterEnvMapUE4 with roughness 0.0" << std::endl;
+        getSample( R, color );
+        return color;
+    }
+
+
     for( uint i = 0; i < numSamples; i++ ) {
 
         // see getPrecomputedLightInLocalSpace in Math
         // and https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
         // for the simplification
-        const Vec3f& L = getPrecomputedLightInLocalSpace( i, numSamples, roughnessLinear);
+
+        // vec4 contains the light vector + miplevel
+        const Vec4f& L = getPrecomputedLightInLocalSpace( i, numSamples, roughnessLinear, textureSize);
+        float precomputedLod = L[3];
         float NoL = L[2];
 
         if( NoL > 0.0 ) {
             statsTotalSamplesHit++;
             Vec3f LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
-            getSample( LworldSpace, color );
+
+            if (useLod)
+                getSampleLOD( precomputedLod, LworldSpace, color );
+            else
+                getSample( LworldSpace, color );
+
             prefilteredColor += Vec3d( color * NoL );
             totalWeight += NoL;
         }
@@ -691,6 +757,7 @@ Vec3f Cubemap::averageEnvMap( float blurSize, const Vec3f& R, const uint numSamp
 
     // only one sample copy
     if ( numSamples2 == 1 ) {
+        std::cout << "You should not be in Cubemap::averageEnvMap with 1 sample" << std::endl;
         getSample( R, color );
         return color;
     }
@@ -716,7 +783,7 @@ Vec3f Cubemap::averageEnvMap( float blurSize, const Vec3f& R, const uint numSamp
         float w;
         // Tangent to world space
         Vec3f H =  uniformSampleOnCone( Xi, blurSize, N, TangentX, TangentY, sigmaSqr, w);
-        //float d = dot(H,N);
+
         getSample( H, color );
         prefilteredColor += color*w;
         wSum += w;
@@ -757,6 +824,19 @@ void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, 
     dirResult[2] = res[2];
 }
 
+
+// major axis
+// direction     target                              sc     tc    ma
+// ----------    ---------------------------------   ---    ---   ---
+//  +rx          GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT   -rz    -ry   rx
+//  -rx          GL_TEXTURE_CUBE_MAP_NEGATIVE_X_EXT   +rz    -ry   rx
+//  +ry          GL_TEXTURE_CUBE_MAP_POSITIVE_Y_EXT   +rx    +rz   ry
+//  -ry          GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_EXT   +rx    -rz   ry
+//  +rz          GL_TEXTURE_CUBE_MAP_POSITIVE_Z_EXT   +rx    -ry   rz
+//  -rz          GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_EXT   -rx    -ry   rz
+// s   =   ( sc/|ma| + 1 ) / 2
+// t   =   ( tc/|ma| + 1 ) / 2
+
 void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u, float& v) {
 
     int bestAxis = 0;
@@ -787,12 +867,23 @@ void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u
 
 }
 
-void Cubemap::getSample(const Vec3f& direction, Vec3f& color ) const {
+void Cubemap::getSampleLOD(float lod, const Vec3f& direction, Vec3f& color ) const {
+    float l0 = floor( lod );
+    float l1 = ceil( lod );
+    float r = lod - l0;
+
+    Vec3f color0,color1;
+    _levels[int(l0)].getSample(direction, color0 );
+    _levels[int(l1)].getSample(direction, color1 );
+    color = lerp( color0, color1, r );
+}
+
+void Cubemap::MipLevel::getSample(const Vec3f& direction, Vec3f& color ) const {
 
     float u,v;
     int faceIndex;
 
-    int size = _size;
+    int size = getSize();
     vectToTexelCoord(direction, size, faceIndex, u,v );
 
 
@@ -807,14 +898,14 @@ void Cubemap::getSample(const Vec3f& direction, Vec3f& color ) const {
 
 
     // for ( int i = 0; i < 3; i++ )
-    //     color[i] = lerp( lerp( _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel + i  ],
-    //                             _images[ faceIndex ][ ( j0 * size + i1 ) * _samplePerPixel + i  ], di ),
-    //                       lerp( _images[ faceIndex ][ ( j1 * size + i0 ) * _samplePerPixel + i  ],
-    //                             _images[ faceIndex ][ ( j1 * size + i1 ) * _samplePerPixel + i  ], di ), dj );
+    //     color[i] = lerp( lerp( _images[ faceIndex ][ ( j0 * size + i0 ) * getSamplePerPixel() + i  ],
+    //                             _images[ faceIndex ][ ( j0 * size + i1 ) * getSamplePerPixel() + i  ], di ),
+    //                       lerp( _images[ faceIndex ][ ( j1 * size + i0 ) * getSamplePerPixel() + i  ],
+    //                             _images[ faceIndex ][ ( j1 * size + i1 ) * getSamplePerPixel() + i  ], di ), dj );
 
-    color[0] = _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel     ];
-    color[1] = _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel + 1 ];
-    color[2] = _images[ faceIndex ][ ( j0 * size + i0 ) * _samplePerPixel + 2 ];
+    color[0] = _images[ faceIndex ][ ( j0 * size + i0 ) * getSamplePerPixel()     ];
+    color[1] = _images[ faceIndex ][ ( j0 * size + i0 ) * getSamplePerPixel() + 1 ];
+    color[2] = _images[ faceIndex ][ ( j0 * size + i0 ) * getSamplePerPixel() + 2 ];
 
 
     //std::cout << "face " << index << " color " << r << " " << g << " " << b << std::endl;
@@ -825,577 +916,4 @@ std::string getOutputImageFilename(int level, int index, const std::string& outp
     std::stringstream ss;
     ss << output << "fixup_" << level << "_" << index << ".tif";
     return ss.str();
-}
-
-
-Cubemap* Cubemap::makeSeamless() const
-{
-    #define DEBUG
-    const std::string& output = "/tmp/debug_cubemap_fixBorder";
-    static int level = 0;
-
-    const Cubemap& cm = *this;
-
-
-    int size = cm._size;
-    int fixSize = 1;
-
-    // if the texture is 2 or less no need to copy edge
-    // it will be fixed with corner for tex size 2x2
-    // and we make the same pixel for all cubemap face for tex size = 1
-    if ( size <= 2 ) // dont fix edge for size <= 2 need special operations
-        fixSize = 0;
-
-
-    int targetSize = size;
-    int sizeWithoutBorder = targetSize - fixSize*2;
-
-    std::cout << "fix border on cubemap to "  << size << " x " << size << " x " << 3 << std::endl;
-
-    Cubemap* dst = new Cubemap();
-    dst->init( size );
-
-
-    ImageBuf* original[6];
-    ImageBuf* resized[6];
-
-    // resize each image less 1 border pixel on each eadge
-    for ( int i = 0; i < 6; i++) {
-
-        ImageSpec specOriginal( size, size, cm._samplePerPixel, TypeDesc::FLOAT );
-        specOriginal.attribute("oiio:ColorSpace", "Linear");
-        ImageBuf* imageOriginal = new ImageBuf( specOriginal, cm._images[i] );
-
-        // Copy the first 3 channels of an RGBA, drop the alpha
-        ImageBuf* RGB = imageOriginal;
-        if ( cm._samplePerPixel != 3 ) {
-            ImageSpec specRGB( size, size, 3, TypeDesc::FLOAT );
-            specRGB.attribute("oiio:ColorSpace", "Linear");
-            RGB = new ImageBuf( specRGB );
-            ImageBufAlgo::channels (*RGB, *imageOriginal, 3, 0, 0 );
-        }
-
-        ImageSpec specResize( sizeWithoutBorder, sizeWithoutBorder, 3, TypeDesc::FLOAT );
-        specResize.attribute("oiio:ColorSpace", "Linear");
-        ImageBuf* imageResized = new ImageBuf( specResize);
-
-        ImageBufAlgo::resize(*imageResized, *RGB );
-
-        resized[i] = imageResized;
-        original[i] = RGB;
-    }
-
-    int subSize = sizeWithoutBorder;
-
-
-    // for the pictures
-    // http://scalibq.wordpress.com/2013/06/23/cubemaps/
-
-    // compute 8 corner
-
-    // corner X+ top left
-    Vec3f tmp;
-    Vec3f corner0(0.0,0.0,0.0);
-    {
-        // z+ top right
-        original[4]->getpixel(size-1, 0, 0, &tmp[0] );
-        corner0 += tmp;
-
-        // x+ top left
-        original[0]->getpixel(0, 0, 0, &tmp[0] );
-        corner0 += tmp;
-
-        // y+ bot right
-        original[2]->getpixel(size-1, size-1, 0, &tmp[0] );
-        corner0 += tmp;
-
-    }
-    corner0 /= 3.0;
-
-
-    // corner X+ top right
-    Vec3f corner1(0,0,0);
-    {
-        // z- top left
-        original[5]->getpixel(0, 0, 0, &tmp[0] );
-        corner1 += tmp;
-
-        // x+ top right
-        original[0]->getpixel(size -1 , 0, 0, &tmp[0] );
-        corner1 += tmp;
-
-        // y+ top right
-        original[2]->getpixel(size-1, 0, 0, &tmp[0] );
-        corner1 += tmp;
-    }
-    corner1 /= 3.0;
-
-
-    // corner X+ bot right
-    Vec3f corner2(0,0,0);
-    {
-        // z- bot left
-        original[5]->getpixel(0, size-1, 0, &tmp[0] );
-        corner2 += tmp;
-
-        // x+ bot right
-        original[0]->getpixel(size-1 , size-1, 0, &tmp[0] );
-        corner2 += tmp;
-
-        // y- bot right
-        original[3]->getpixel(size-1, size-1, 0, &tmp[0] );
-        corner2 += tmp;
-    }
-    corner2 /= 3.0;
-
-
-    // corner X+ bot left
-    Vec3f corner3(0,0,0);
-    {
-        // z+ bot right
-        original[4]->getpixel(size-1, size-1, 0, &tmp[0] );
-        corner3 += tmp;
-
-        // x+ bot left
-        original[0]->getpixel(0 , size-1, 0, &tmp[0] );
-        corner3 += tmp;
-
-        // y- top right
-        original[3]->getpixel(size-1, 0, 0, &tmp[0] );
-        corner3 += tmp;
-    }
-    corner3 /= 3.0;
-
-
-    // corner X- top left
-    Vec3f corner4(0,0,0);
-    {
-        // z- top right
-        original[5]->getpixel(size-1, 0, 0, &tmp[0] );
-        corner4 += tmp;
-
-        // x- top left
-        original[1]->getpixel(0, 0, 0, &tmp[0] );
-        corner4 += tmp;
-
-        // y+ top left
-        original[2]->getpixel( 0, 0, 0, &tmp[0] );
-        corner4 += tmp;
-    }
-    corner4 /= 3.0;
-
-
-    // corner X- top right
-    Vec3f corner5(0,0,0);
-    {
-        // z+ top left
-        original[4]->getpixel(0, 0, 0, &tmp[0] );
-        corner5 += tmp;
-
-        // x- top right
-        original[1]->getpixel(size-1, 0, 0, &tmp[0] );
-        corner5 += tmp;
-
-        // y+ bot right
-        original[2]->getpixel( 0, size-1, 0, &tmp[0] );
-        corner5 += tmp;
-    }
-    corner5 /= 3.0;
-
-
-    // corner X- bot right
-    Vec3f corner6(0,0,0);
-    {
-        // z+ bot left
-        original[4]->getpixel(0, size-1, 0, &tmp[0] );
-        corner6 += tmp;
-
-        // x- bot right
-        original[1]->getpixel(size-1, size-1, 0, &tmp[0] );
-        corner6 += tmp;
-
-        // y- top left
-        original[3]->getpixel( 0, 0, 0, &tmp[0] );
-        corner6 += tmp;
-    }
-    corner6 /= 3.0;
-
-
-    // corner X- bot left
-    Vec3f corner7(0,0,0);
-    {
-        // z- bot left
-        original[5]->getpixel(size-1, size-1, 0, &tmp[0] );
-        corner7 += tmp;
-
-        // x- bot left
-        original[1]->getpixel(0, size-1, 0, &tmp[0] );
-        corner7 += tmp;
-
-        // y- top left
-        original[3]->getpixel( 0, size-1, 0, &tmp[0] );
-        corner7 += tmp;
-    }
-    corner7 /= 3.0;
-
-
-    // special case for mipmap 1
-    // texture size = 1
-    float allFace[3]; allFace[0] = 0; allFace[1] = 0; allFace[2] = 0;
-    if ( size == 1 ) {
-        for ( int i = 0; i < 6; i++ ) {
-            float tmp[3];
-            resized[i]->getpixel( 0, 0, 0, &tmp[0] );
-            allFace[0] += tmp[0]; allFace[1] += tmp[1]; allFace[2] += tmp[2];
-        }
-        allFace[0] /= 6.0; allFace[1] /= 6.0; allFace[2] /= 6.0;
-    }
-
-    // x
-    {
-        std::string file = getOutputImageFilename(level, 0, output);
-        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[0] );
-        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[0] );
-
-        //  top edge: y positif
-        ImageBuf spanTop;
-        ImageBufAlgo::rotate90(spanTop, *resized[2]);
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
-                                 spanTop, ROI(0, subSize, subSize-1, subSize));
-        }
-
-        //  right edge: z negatif
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
-                                 *resized[5], ROI(0 ,1, 0, subSize));
-        }
-
-
-        //  left edge: z negatif
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
-                                 *resized[4], ROI( subSize-1 ,subSize, 0, subSize));
-        }
-
-        //  bottom edge: y negatif
-        ImageBuf spanBot;
-        ImageBufAlgo::rotate270(spanBot, *resized[3]);
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
-                                 spanBot, ROI(0, subSize, 0, 1));
-        }
-
-        // corners
-        imageBufOut.setpixel( 0,0,0, &corner0[0] );
-        imageBufOut.setpixel( size-1,0,0, &corner1[0] );
-        imageBufOut.setpixel( size-1,size-1,0, &corner2[0] );
-        imageBufOut.setpixel( 0,size-1,0, &corner3[0] );
-
-        // when last mipmap level
-        if ( size == 1 )
-            imageBufOut.setpixel(0,0,0, allFace);
-
-#ifdef DEBUG
-        imageBufOut.write(file.c_str());
-#endif
-    }
-
-
-    // -x
-    {
-        std::string file = getOutputImageFilename(level, 1, output);
-        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[1]);
-        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[1] );
-
-        //  top edge: y positif
-        ImageBuf spanTop;
-        ImageBufAlgo::rotate270(spanTop, *resized[2]);
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
-                                 spanTop, ROI(0, subSize, subSize-1, subSize));
-        }
-
-        //  right edge: z negatif
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
-                                 *resized[4], ROI(0 ,1, 0, subSize));
-        }
-
-
-        //  left edge: z negatif
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
-                                 *resized[5], ROI( subSize-1 ,subSize, 0, subSize));
-        }
-
-        //  bottom edge: y negatif
-        ImageBuf spanBot;
-        ImageBufAlgo::rotate90(spanBot, *resized[3]);
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
-                                 spanBot, ROI(0, subSize, 0, 1));
-        }
-
-        // &corners[0]
-        imageBufOut.setpixel( 0,0,0, &corner4[0] );
-        imageBufOut.setpixel( size-1,0,0, &corner5[0] );
-        imageBufOut.setpixel( size-1,size-1,0, &corner6[0] );
-        imageBufOut.setpixel( 0,size-1,0, &corner7[0] );
-
-        // when last mipmap level
-        if ( size == 1 )
-            imageBufOut.setpixel(0,0,0, allFace);
-
-#ifdef DEBUG
-        imageBufOut.write(file.c_str());
-#endif
-    }
-
-
-    // y
-    {
-        std::string file = getOutputImageFilename(level, 2, output);
-        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[2]);
-        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[2] );
-
-        //  top edge: y positif
-        {
-            ImageBuf span;
-            ImageBufAlgo::flop(span, *resized[5]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
-                                     span, ROI(0, subSize, 0, 1));
-            }
-        }
-
-        //  right edge: x pos
-        {
-            ImageBuf span;
-            ImageBufAlgo::rotate270(span, *resized[0]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
-                                     span, ROI(0 ,1, 0, subSize));
-            }
-        }
-
-
-        //  left edge: x neg
-        {
-            ImageBuf span;
-            ImageBufAlgo::rotate90(span, *resized[1]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
-                                     span, ROI(subSize-1 ,subSize, 0, subSize));
-            }
-        }
-
-        //  bottom edge: z positif
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
-                                 *resized[4], ROI(0, subSize, 0, 1));
-        }
-
-        // &corners[0]
-        imageBufOut.setpixel( 0,0,0, &corner4[0] );
-        imageBufOut.setpixel( size-1,0,0, &corner1[0] );
-        imageBufOut.setpixel( size-1,size-1,0, &corner0[0] );
-        imageBufOut.setpixel( 0,size-1,0, &corner5[0] );
-
-        // when last mipmap level
-        if ( size == 1 )
-            imageBufOut.setpixel(0,0,0, allFace);
-
-#ifdef DEBUG
-        imageBufOut.write(file.c_str());
-#endif
-    }
-
-
-    // -y
-    {
-        std::string file = getOutputImageFilename(level, 3, output);
-        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[3]);
-        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[3] );
-
-        //  top edge: z positif
-        {
-            ImageBuf span;
-            //ImageBufAlgo::flop(span, *resized[4]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
-                                     *resized[4], ROI(0, subSize, subSize-1, subSize));
-            }
-        }
-
-        //  right edge: x pos
-        {
-            ImageBuf span;
-            ImageBufAlgo::rotate90(span, *resized[0]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
-                                     span, ROI(0 ,1, 0, subSize));
-            }
-        }
-
-
-        //  left edge: x neg
-        {
-            ImageBuf span;
-            ImageBufAlgo::rotate270(span, *resized[1]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
-                                     span, ROI(subSize-1 ,subSize, 0, subSize));
-            }
-        }
-
-        //  bottom edge: z neg
-        {
-            ImageBuf span;
-            ImageBufAlgo::flop(span, *resized[5]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
-                                     span, ROI(0, subSize, subSize-1, subSize));
-            }
-        }
-
-        imageBufOut.setpixel( 0,0,0, &corner6[0] );
-        imageBufOut.setpixel( size-1,0,0, &corner3[0] );
-        imageBufOut.setpixel( size-1,size-1,0, &corner2[0] );
-        imageBufOut.setpixel( 0,size-1,0, &corner7[0] );
-
-        // when last mipmap level
-        if ( size == 1 )
-            imageBufOut.setpixel(0,0,0, allFace);
-
-#ifdef DEBUG
-        imageBufOut.write(file.c_str());
-#endif
-    }
-
-
-    // z
-    {
-        std::string file = getOutputImageFilename(level, 4, output);
-        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[4]);
-        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[4] );
-
-        //  top edge: y pos
-        {
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
-                                     *resized[2], ROI(0, subSize, subSize-1, subSize));
-            }
-        }
-
-        //  right edge: x pos
-        {
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
-                                     *resized[0], ROI(0 ,1, 0, subSize));
-            }
-        }
-
-
-        //  left edge: x neg
-        {
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
-                                     *resized[1], ROI(subSize-1 ,subSize, 0, subSize));
-            }
-        }
-
-        //  bottom edge: y neg
-        for ( int i = 0; i < fixSize; i++ ) {
-            ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
-                                 *resized[3], ROI(0, subSize, 0, 1));
-        }
-
-
-        imageBufOut.setpixel( 0,0,0, &corner5[0] );
-        imageBufOut.setpixel( size-1,0,0, &corner0[0] );
-        imageBufOut.setpixel( size-1,size-1,0, &corner3[0] );
-        imageBufOut.setpixel( 0,size-1,0, &corner6[0] );
-
-        // when last mipmap level
-        if ( size == 1 )
-            imageBufOut.setpixel(0,0,0, allFace);
-
-#ifdef DEBUG
-        imageBufOut.write(file.c_str());
-#endif
-    }
-
-
-
-    // -z
-    {
-        std::string file = getOutputImageFilename(level, 5, output);
-        ImageSpec specOut( targetSize, targetSize, 3, TypeDesc::FLOAT );
-        ImageBuf imageBufOut( file.c_str(), specOut, dst->_images[5]);
-        ImageBufAlgo::paste (imageBufOut, fixSize, fixSize, 0, 0, *resized[5] );
-
-        //  top edge: y pos
-        {
-            ImageBuf span;
-            ImageBufAlgo::flop(span, *resized[2]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, fixSize, i , 0, 0,
-                                     span, ROI(0, subSize, 0,1));
-            }
-        }
-
-        //  right edge: x neg
-        {
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, subSize+fixSize+i, fixSize , 0, 0,
-                                     *resized[1], ROI(0 ,1, 0, subSize));
-            }
-        }
-
-
-        //  left edge: x pos
-        {
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, i, fixSize , 0, 0,
-                                     *resized[0], ROI(subSize-1 ,subSize, 0, subSize));
-            }
-        }
-
-        //  bottom edge: y neg
-        {
-            ImageBuf span;
-            ImageBufAlgo::flop(span, *resized[3]);
-            for ( int i = 0; i < fixSize; i++ ) {
-                ImageBufAlgo::paste (imageBufOut, fixSize, subSize + fixSize + i , 0, 0,
-                                     span, ROI(0, subSize, subSize-1, subSize));
-            }
-        }
-
-        imageBufOut.setpixel( 0,0,0, &corner1[0] );
-        imageBufOut.setpixel( size-1,0,0, &corner4[0] );
-        imageBufOut.setpixel( size-1,size-1,0, &corner7[0] );
-        imageBufOut.setpixel( 0,size-1,0, &corner2[0] );
-
-        // when last mipmap level
-        if ( size == 1 )
-            imageBufOut.setpixel(0,0,0, allFace);
-
-#ifdef DEBUG
-        imageBufOut.write( file.c_str() );
-#endif
-    }
-
-    for ( int i = 0; i < 6; i++) {
-        delete resized[i];
-    }
-
-    level++;
-
-    return dst;
 }

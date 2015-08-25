@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
         output = std::string( argv[optind+1] );
 
         Cubemap image;
-        image.loadCubemap(input);
+        image.load(input);
         image.computeBackground( output, size, samples, blur, fixup );
 
     } else {

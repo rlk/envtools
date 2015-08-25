@@ -10,7 +10,10 @@
 #include <cfloat>
 #include <algorithm>
 
+typedef unsigned int uint;
+
 #define PI 3.14159265358979
+#define PI_INV (1.0/PI)
 
 
 inline bool isNaN(float v) { return std::isnan(v); }
@@ -996,12 +999,21 @@ inline const Vec3f& importanceSampleGGX( unsigned int i, unsigned int numSamples
     return cacheImportanceSampleGGX[i];
 }
 
+inline float D_GGX( float NdotH, float alpha)
+{
+    // use GGX / Trowbridge-Reitz, same as Disney and Unreal 4
+    // cf http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf p3
+    float tmp = alpha / (NdotH*NdotH*(alpha*alpha-1.0)+1.0);
+    return tmp * tmp * PI_INV;
+}
 
-static Vec3f cachePrecomputedLightSample[65536];
+
+
+static Vec4f cachePrecomputedLightSample[65536];
 static float cachePrecomputedLightRoughness = -1;
 
 
-inline const Vec3f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned int numSamples, float roughnessLinear )
+inline const Vec4f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned int numSamples, float roughnessLinear, uint size = 0 )
 {
 #if 1
 
@@ -1011,6 +1023,8 @@ inline const Vec3f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned in
         // https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/
         // in local space view == normal == 0,0,1
         const Vec3f V = Vec3f(0,0,1);
+        float fOmegaP = 4.0 * PI / ( 6.0 * size * size);
+
 
         // do the computation in local space and store the computed light vector L
         // in local space. It will be transformed in the main loop from tangent space
@@ -1030,7 +1044,28 @@ inline const Vec3f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned in
             Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
             L.normalize();
 
-            cachePrecomputedLightSample[a] = L;
+            // H[2] is NoH in local space
+            // adds 1.e-5 to avoid D_GGX / 0.0
+            float NoH = H[2] + 1.e-5;
+
+
+            // Vectors to evaluate pdf
+            float VoH = NoH;
+
+            // Probability Distribution Function
+            float Pdf = D_GGX(NoH, roughnessLinear) * NoH / (4.0f * VoH);
+
+            // Solid angle represented by this sample
+            float fOmegaS = 1.0 / (numSamples * Pdf);
+
+            // Solid angle covered by 1 pixel with 6 faces that are EnvMapSize X EnvMapSize
+            //float fOmegaP = 4.0 * PI / ( 6.0 * 1024 * 1024);
+
+            // Original paper suggest biasing the mip to improve the results
+            float fMipBias = 1.0f; // I tested that the result is better with bias 1
+            float fMipLevel = std::max(0.5 * log2(fOmegaS / fOmegaP) + fMipBias, 0.0);
+
+            cachePrecomputedLightSample[a] = Vec4f(L[0], L[1], L[2], fMipLevel );
         }
         cachePrecomputedLightRoughness = roughnessLinear;
     }
@@ -1052,7 +1087,11 @@ inline const Vec3f& getPrecomputedLightInLocalSpace( unsigned int i, unsigned in
     Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
     L.normalize();
 
-    cachePrecomputedLightSample[i] = L;
+    // H[2] is NoH in local space
+    // adds 1.e-5 to avoid D_GGX / 0.0
+    float NoH = H[2] + 1.e-5;
+
+    cachePrecomputedLightSample[i] = Vec4f(L[0], L[1], L[2], NoH );
 #endif
     return cachePrecomputedLightSample[i];
 }

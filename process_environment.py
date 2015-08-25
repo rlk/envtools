@@ -7,6 +7,7 @@ import time
 import math
 import json
 import argparse
+import shutil
 
 DEBUG = False
 
@@ -155,7 +156,6 @@ class ProcessEnvironment(object):
                 # break
 
     def cubemap_fix_border(self, input, output):
-        import shutil
         shutil.copyfile(input, output)
         return
         cmd = "{} {} {}".format(seamlessCubemap_cmd, input, output)
@@ -250,7 +250,7 @@ class ProcessEnvironment(object):
 
         cmd = "{} -s {} -e {} -n {} {} {} {}".format(
             envPrefilter_cmd, specular_size, prefilter_stop_size,
-            self.nb_samples, fix_flag, self.cubemap_highres,
+            self.nb_samples, fix_flag, self.mipmap_pattern,
             output_filename)
         execute_command(cmd)
 
@@ -315,6 +315,21 @@ class ProcessEnvironment(object):
                 })
 
     def specular_create_prefilter(self, specular_size, prefilter_stop_size):
+
+        # create mipmap to accelerate prefiltering
+        max_level = self.getMaxLevel(1024)
+        previous_file = self.cubemap_highres
+        for i in range(0, max_level + 1):
+            size = int(math.pow(2, max_level - i))
+            outout_filename = "/tmp/mip_cube_{}.tif".format(i)
+            cmd = "{} -p {} -n {} -i cube -o cube {} {}".format(
+                envremap_cmd, self.pattern_filter, size,
+                previous_file, outout_filename)
+
+            previous_file = outout_filename
+            execute_command(cmd)
+        self.mipmap_pattern = "/tmp/mip_cube_%d.tif"
+        #self.mipmap_pattern = self.cubemap_highres
         self.specular_create_prefilter_panorama(specular_size, prefilter_stop_size)
         self.specular_create_prefilter_cubemap(specular_size, prefilter_stop_size)
 
@@ -426,7 +441,7 @@ if __name__ == "__main__":
     parser.add_argument("--write-by-channel", action="store_true", dest="write_by_channel",
                         help="write by channel all red then green then blue ...")
     parser.add_argument("--nbSamples", action="store", dest="nb_samples",
-                        help="nb samples to compute environment 1 to 65536", default=65536)
+                        help="nb samples to compute environment 1 to 65536", default=4096)
     parser.add_argument("--backgroundSamples", action="store", dest="background_samples",
                         help="nb samples to compute background 1 to 65536", default=4096)
     parser.add_argument("--specularSize", action="store", dest="specular_size",

@@ -6,6 +6,7 @@
 
 #include "Math"
 #include <string>
+#include <vector>
 
 typedef unsigned int uint;
 typedef struct tiff TIFF;
@@ -25,48 +26,66 @@ static Vec3f CubemapFace[6][3] = {
 struct Cubemap {
 
     struct MipLevel {
-        int _size;
+        uint _size;
         float* _images[6];
+        uint _samplePerPixel;
+
+        MipLevel();
+        ~MipLevel();
+
+        void init( uint size, uint sample );
+        uint getSize() const { return _size; }
+        void getSample( const Vec3f& dir, Vec3f& color ) const;
+        float texelCoordSolidAngle(uint faceIdx, float aU, float aV) const;
+        void buildNormalizerSolidAngleCubemap(uint size, int fixup);
+        bool load(const std::string& filename);
+        void write( const std::string& filename ) const;
+
+        float* imageFace( uint face) { return _images[face]; }
+        const float* imageFace( uint face) const { return _images[face]; }
+        uint getSamplePerPixel() const { return _samplePerPixel; }
+
     };
 
+    std::vector<MipLevel> _levels;
 
-    int _size;
-    float* _images[6];
-    int _samplePerPixel;
 
     Cubemap* _normalizeSolidAngle;
 
     Cubemap();
     ~Cubemap();
 
-    int getSize() const { return _size; }
+    int getSize() const { return _levels[0].getSize(); }
+    const MipLevel& getImages( uint level = 0 ) const { return _levels[level]; }
+    MipLevel& getImages( uint level = 0 ) { return _levels[level]; }
+    uint getSamplePerPixel() const { return _levels[0].getSamplePerPixel(); }
 
     void fill( const Vec4f& value );
     void init( int size, int sample = 3);
-    void write( const std::string& filename );
-    void sample(const Vec3f& direction, Vec3f& color ) const;
+    void write( const std::string& filename ) const;
+    bool load(const std::string& name);
 
-    bool loadCubemap(const std::string& name);
-
-    void buildNormalizerSolidAngleCubemap(int size, int fixupType);
-    float texelCoordSolidAngle( int faceIndex, float u, float v);
+    void buildNormalizerSolidAngleCubemap(uint size, int fixupType);
+    float texelCoordSolidAngle( uint faceIndex, float u, float v) const;
 
     Cubemap* shFilterCubeMap(bool useSolidAngleWeighting, int fixupType, int outputCubemapSize = 256 );
 
     void fixupCubeEdges( const std::string& output, int level);
-
+    void computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint numSamples, bool fixup );
 
     void computePrefilteredEnvironmentUE4( const std::string& output, int startSize = 0, int startMipMap = 0, uint numSamples = 1024, bool fixup = false);
-    void computeBackground( const std::string& output, int startSize, uint nbSamples, float roughnessLinear, const bool fixup );
 
-    void computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint numSamples, bool fixup );
-    void iterateOnFace( int face, float roughness, const Cubemap& cubemap, uint numSamples, bool fixup, bool backgroundAverage = false );
-    void getSample(const Vec3f& direction, Vec3f& color ) const;
+    bool loadMipMap(const std::string& filenamePattern);
 
     Vec3f prefilterEnvMapUE4( float roughness, const Vec3f& R, uint numSamples ) const;
     Vec3f averageEnvMap( float roughnessLinear, const Vec3f& R, uint numSamples ) const;
 
-    Cubemap* makeSeamless() const;
+
+    void getSample(const Vec3f& direction, Vec3f& color ) const;
+    void getSampleLOD( float lod, const Vec3f& dir, Vec3f& color ) const;
+    void iterateOnFace( uint face, float roughness, const Cubemap& cubemap, uint numSamples, bool fixup, bool backgroundAverage = false );
+    void computePrefilterCubemapAtLevel( float roughness, const MipLevel& inputCubemap, uint numSamples, bool fixup );
+    void computeBackground( const std::string& output, int startSize, uint nbSamples, float roughnessLinear, const bool fixup );
 
 
 };

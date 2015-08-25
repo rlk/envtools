@@ -110,7 +110,7 @@ public:
     bool processCubemap( uint size, const std::string& name ) {
 
         Cubemap cm;
-        bool loaded = cm.loadCubemap(name);
+        bool loaded = cm.load(name);
 
         if (!size)
             size = cm.getSize();
@@ -127,10 +127,11 @@ public:
         }
 
 
+        uint cubemapSize = cm.getSize();
         for ( int i = 0 ; i < 6; i++ ) {
 
-            ImageSpec specIn(cm._size, cm._size, cm._samplePerPixel, TypeDesc::FLOAT);
-            ImageBuf src(specIn, cm._images[i]);
+            ImageSpec specIn(cubemapSize, cubemapSize, cm.getSamplePerPixel(), TypeDesc::FLOAT);
+            ImageBuf src(specIn, cm.getImages().imageFace(i));
 
             //std::cout << "processing " << str << " size " << specIn.width << "x" << specIn.height << std::endl;
 

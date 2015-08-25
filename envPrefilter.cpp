@@ -39,7 +39,13 @@ int main(int argc, char *argv[])
         output = std::string( argv[optind+1] );
 
         Cubemap image;
-        image.loadCubemap(input);
+
+        // check if we can load mipmap
+        if ( input.find("%") != std::string::npos )
+            image.loadMipMap(input);
+        else
+            image.load(input);
+
         image.computePrefilteredEnvironmentUE4( output, size, endSize, samples, fixup );
 
     } else {
