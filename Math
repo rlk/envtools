@@ -16,6 +16,7 @@ typedef unsigned int uint;
 #define PI 3.14159265358979
 #define PI_INV (1.0/PI)
 
+#define MAX_SAMPLES_CACHE 131072
 
 inline bool isNaN(float v) { return std::isnan(v); }
 inline bool isNaN(double v) { return std::isnan(v); }
@@ -910,7 +911,7 @@ inline T lerp( const T& a, const T& b, float t)
 
 
 
-inline double radicalInverse_VdC(unsigned int bits) {
+inline double radicalInverse_VdC(uint bits) {
     bits = (bits << 16) | (bits >> 16);
     bits = ((bits & 0x55555555) << 1) | ((bits & 0xAAAAAAAA) >> 1);
     bits = ((bits & 0x33333333) << 2) | ((bits & 0xCCCCCCCC) >> 2);
@@ -920,7 +921,7 @@ inline double radicalInverse_VdC(unsigned int bits) {
 }
 
 
-static Vec2f cacheHammersleySamples[65536];
+static Vec2f cacheHammersleySamples[MAX_SAMPLES_CACHE];
 static unsigned int cacheHammersleyNbSamples = 0;
 
 inline const Vec2f& hammersley(unsigned int i, unsigned int N) {
@@ -958,7 +959,7 @@ template<typename T>
 inline T saturate(T v) { return v<0.0?0.0:v>1.0?1.0:v; }
 
 
-static Vec3f cacheImportanceSampleGGX[65536];
+static Vec3f cacheImportanceSampleGGX[MAX_SAMPLES_CACHE];
 static float cacheImportanceSampleRoughness = -1.0;
 
 inline const Vec3f& importanceSampleGGX( unsigned int i, unsigned int numSamples, float roughnessLinear )
@@ -1010,7 +1011,7 @@ inline float D_GGX( float NdotH, float alpha)
 
 
 
-static Vec4f cachePrecomputedLightSample[65536];
+static Vec4f cachePrecomputedLightSample[MAX_SAMPLES_CACHE];
 static float cachePrecomputedLightRoughness = -1;
 static double cachePrecomputedLightTotalWeight = 0.0;
 
@@ -1122,7 +1123,7 @@ inline const double& getPrecomputedLightTotalWeight()
 }
 
 
-static Vec4f cachePrecomputedUniformSampleOnCone[65536];
+static Vec4f cachePrecomputedUniformSampleOnCone[MAX_SAMPLES_CACHE];
 static uint cachePrecomputedUniformSampleOnConeNbSamples = 0;
 static double cachePrecomputedUniformSampleOnConeWeightSum = 0.0;
 

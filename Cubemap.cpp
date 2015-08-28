@@ -509,6 +509,16 @@ void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int s
 
     int totalMipmap = log2(computeStartSize);
     int endMipMap = totalMipmap - log2( endSize );
+#if 0
+    std::set<double> hamm;
+    for ( uint i = 0; i < 120000; i++ ) {
+        double v = radicalInverse_VdC(i);
+        if ( hamm.find(v) != hamm.end() ) {
+            std::cout << "entry " << v << " already in map" << std::endl;
+            hamm.insert(v);
+        }
+    }
+#endif
 
     std::cout << endMipMap + 1 << " mipmap levels will be generated from " << computeStartSize << " x " << computeStartSize << " to " << endSize << " x " << endSize << std::endl;
 
@@ -647,8 +657,6 @@ Vec3f Cubemap::prefilterEnvMapUE4( const Vec3f& R, const uint numSamples ) const
     Vec3f N = R;
 
     Vec3d prefilteredColor = Vec3d(0,0,0);
-
-    double totalWeight = 0;
     Vec3f color;
 
     Vec3f UpVector = fabs(N[2]) < 0.999 ? Vec3f(0,0,1) : Vec3f(1,0,0);
@@ -675,9 +683,7 @@ Vec3f Cubemap::prefilterEnvMapUE4( const Vec3f& R, const uint numSamples ) const
             getSampleLOD( precomputedLod, LworldSpace, color );
 
             prefilteredColor += Vec3d( color * NoL );
-            totalWeight+=NoL;
         }
-        return prefilteredColor / totalWeight;
 
     } else {
 

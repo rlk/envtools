@@ -94,12 +94,15 @@ class ProcessEnvironment(object):
         self.specular_file_base = "specular"
 
         self.brdf_file = "brdf_ue4.bin"
+        self.brdf_nb_samples = 4096
 
         self.background_size = kwargs.get("background_size", 256)
         self.background_blur = kwargs.get("background_blur", 0.1)
         self.background_file_base = "background"
 
         self.mipmap_file_base = "mipmap_cubemap"
+        self.mipmap_size = 1024
+        self.mipmap_filename = None
 
         self.can_comppress = True if which(compress_7Zip_cmd) != None else False
 
@@ -179,10 +182,9 @@ class ProcessEnvironment(object):
         max_level = int(math.log(float(value)) / math.log(2))
         return max_level
 
-    def cubemap_specular_create_mipmap(self, specular_size):
+    def cubemap_specular_create_mipmap(self, cubemap_size):
 
-        max_level = self.getMaxLevel(specular_size)
-
+        max_level = self.getMaxLevel(cubemap_size)
         previous_file = self.cubemap_highres
 
         for i in range(0, max_level + 1):
@@ -194,17 +196,19 @@ class ProcessEnvironment(object):
 
             previous_file = outout_filename
             execute_command(cmd)
-            self.cubemap_fix_border(outout_filename, "/tmp/fixup_{}.tif".format(i))
 
+        self.mipmap_pattern = "/tmp/specular_%d.tif"
         file_basename = os.path.join(self.output_directory, self.mipmap_file_base)
-        self.cubemap_packer("/tmp/fixup_%d.tif", max_level, file_basename)
+        self.mipmap_filename = file_basename
+        self.cubemap_packer(self.mipmap_pattern, max_level, file_basename)
 
+    def register_mipmap_cubemap(self):
         for encoding in self.encoding_type:
-            file_to_check = "{}_{}.bin".format(file_basename, encoding)
+            file_to_check = "{}_{}.bin".format(self.mipmap_filename, encoding)
             if os.path.exists(file_to_check) is True:
                 self.registerImageConfig(encoding, "cubemap", "mipmap", 8, {
-                    "width": specular_size,
-                    "height": specular_size,
+                    "width": self.mipmap_size,
+                    "height": self.mipmap_size,
                     "file": file_to_check
                 })
 
@@ -213,7 +217,7 @@ class ProcessEnvironment(object):
         # we dont need to recreate it each time
         outout_filename = os.path.join(self.output_directory, "brdf_ue4.bin")
         size = self.integrate_BRDF_size
-        cmd = "{} -s {} -n {} {}".format(envIntegrateBRDF_cmd, size, self.nb_samples, outout_filename)
+        cmd = "{} -s {} -n {} {}".format(envIntegrateBRDF_cmd, size, self.brdf_nb_samples, outout_filename)
         execute_command(cmd)
 
         self.registerImageConfig('rg16', 'lut', "brdf_ue4", None, {
@@ -317,19 +321,8 @@ class ProcessEnvironment(object):
     def specular_create_prefilter(self, specular_size, prefilter_stop_size):
 
         # create mipmap to accelerate prefiltering
-        max_level = self.getMaxLevel(1024)
-        previous_file = self.cubemap_highres
-        for i in range(0, max_level + 1):
-            size = int(math.pow(2, max_level - i))
-            outout_filename = "/tmp/mip_cube_{}.tif".format(i)
-            cmd = "{} -p {} -n {} -i cube -o cube {} {}".format(
-                envremap_cmd, self.pattern_filter, size,
-                previous_file, outout_filename)
+        self.cubemap_specular_create_mipmap(self.mipmap_size)
 
-            previous_file = outout_filename
-            execute_command(cmd)
-        self.mipmap_pattern = "/tmp/mip_cube_%d.tif"
-        #self.mipmap_pattern = self.cubemap_highres
         self.specular_create_prefilter_panorama(specular_size, prefilter_stop_size)
         self.specular_create_prefilter_cubemap(specular_size, prefilter_stop_size)
 
@@ -416,14 +409,14 @@ class ProcessEnvironment(object):
         # generate irradiance*PI panorama/cubemap/sph
         self.compute_irradiance()
 
-        # generate specular
-        self.cubemap_specular_create_mipmap(self.specular_size)
-
         # precompute lut brdf
         self.compute_brdf_lut_ue4()
 
         # generate prefilter ue4 specular
         self.specular_create_prefilter(self.specular_size, self.prefilter_stop_size)
+
+        # register mipspecular
+        self.register_mipmap_cubemap()
 
         if self.can_comppress:
             self.compress()
