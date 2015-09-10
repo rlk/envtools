@@ -158,12 +158,6 @@ class ProcessEnvironment(object):
                 #     f.write(self.sh_coef)
                 # break
 
-    def cubemap_fix_border(self, input, output):
-        shutil.copyfile(input, output)
-        return
-        cmd = "{} {} {}".format(seamlessCubemap_cmd, input, output)
-        execute_command(cmd)
-
     def cubemap_packer(self, pattern, max_level, output):
         cmd = ""
         write_by_channel = "-c" if self.write_by_channel else ""
