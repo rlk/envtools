@@ -16,7 +16,7 @@ typedef unsigned int uint;
 #define PI 3.14159265358979
 #define PI_INV (1.0/PI)
 
-#define MAX_SAMPLES_CACHE 131072
+#define MAX_SAMPLES_CACHE 524288
 
 inline bool isNaN(float v) { return std::isnan(v); }
 inline bool isNaN(double v) { return std::isnan(v); }
@@ -1025,7 +1025,7 @@ inline bool computeLightSampleInLocalSpace(uint i, uint numSamples, uint size, f
     static const Vec3f V = Vec3f(0,0,1);
 
     Vec2f Xi = hammersley( i, numSamples );
-
+    // std::cout << i << " " << Xi[0] << " " << Xi[1] << std::endl;
     float roughness = roughnessLinear * roughnessLinear;
     float Phi = 2.0 * PI * Xi[0];
     float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
@@ -1070,6 +1070,9 @@ inline bool computeLightSampleInLocalSpace(uint i, uint numSamples, uint size, f
     return true;
 }
 
+inline Vec4f* getPrecomputedLightCache() {
+    return cachePrecomputedLightSample;
+}
 
 inline void precomputedLightInLocalSpace( uint numSamples, float roughnessLinear, uint size = 0 )
 {
@@ -1092,12 +1095,26 @@ inline void precomputedLightInLocalSpace( uint numSamples, float roughnessLinear
                     cachePrecomputedLightTotalWeight += result[2]; // accumulate totalWeight
                 }
             }
-            if ( count == numSamples ) found = true;
-            else {
+            if ( count == numSamples ) {
+                found = true;
+            } else {
                 tryNumSamples += numSamples - count;
             }
         }
-        std::cout << "found the sequence " << tryNumSamples << " to generate " << numSamples << " samples valid in " << nbTry << " try" << std::endl;
+
+#if 0
+        // for debug
+        std::cout << "# roughness " << roughnessLinear << " sum samples " << numSamples << std::endl;
+        std::cout << "samples = [ ";
+        for ( uint a = 0; a < numSamples-1; a++ ) {
+            for ( uint b = 0; b < 4; b++ )
+                std::cout << cachePrecomputedLightSample[a][b] << " , ";
+        }
+        for ( uint b = 0; b < 3; b++ )
+            std::cout << cachePrecomputedLightSample[numSamples-1][b] << " , ";
+        std::cout << cachePrecomputedLightSample[numSamples-1][3] << "]" << std::endl;
+#endif
+        std::cout << "roughnessLin " << roughnessLinear << " : found the sequence " << tryNumSamples << " to generate " << numSamples << " samples valid in " << nbTry << " try" << std::endl;
 
         cachePrecomputedLightRoughness = roughnessLinear;
 

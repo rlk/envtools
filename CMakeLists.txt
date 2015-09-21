@@ -78,6 +78,13 @@ install(TARGETS envBackground
   RUNTIME DESTINATION bin
 )
 
+add_executable(samplesGGX samplesGGX.cpp Cubemap.cpp)
+target_link_libraries(samplesGGX ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+
+install(TARGETS samplesGGX
+  RUNTIME DESTINATION bin
+)
+
 add_executable(envBRDF envBRDF.cpp)
 
 install(TARGETS envBRDF
@@ -91,6 +98,6 @@ install(TARGETS panoramaPacker
   RUNTIME DESTINATION bin
 )
 
-install(PROGRAMS process_environment.py
+install(PROGRAMS process_environment.py prefilter_opencl.py ggx.cl
   DESTINATION bin
 )

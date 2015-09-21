@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 import subprocess
 import sys
 import os
@@ -7,7 +6,6 @@ import time
 import math
 import json
 import argparse
-import shutil
 
 DEBUG = False
 
@@ -17,9 +15,12 @@ envIntegrateBRDF_cmd = "envBRDF"
 cubemap_packer_cmd = "cubemapPacker"
 panorama_packer_cmd = "panoramaPacker"
 envremap_cmd = "envremap"
-seamlessCubemap_cmd = "seamlessCubemap"
+samplesGGX_cmd = "samplesGGX"
 envBackground_cmd = "envBackground"
 compress_7Zip_cmd = "7z"
+
+python_dirname = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, python_dirname)
 
 
 def execute_command(cmd, **kwargs):
@@ -109,6 +110,7 @@ class ProcessEnvironment(object):
         self.config = {'textures': []}
         self.config['writeByChannel'] = self.write_by_channel
         self.textures = {}
+        self.prefilterGPU = None
 
     def writeConfig(self):
         filename = os.path.join(self.output_directory, "config.json")
@@ -128,6 +130,8 @@ class ProcessEnvironment(object):
             json.dump(config, output)
 
     def compress(self):
+        start_tick = time.time()
+        sys.stdout.write("compressing ")
         for texture in self.config['textures']:
             if texture['type'] == 'thumbnail':
                 continue
@@ -140,7 +144,24 @@ class ProcessEnvironment(object):
                 image["file"] = "{}.gz".format(f)
                 image["sizeUncompressed"] = size_before
                 image["sizeCompressed"] = size_after
+                sys.stdout.write(".")
+                sys.stdout.flush()
                 os.remove(f)
+        sys.stdout.write(" : {} seconds\n".format((time.time() - start_tick)))
+        sys.stdout.flush()
+
+    def create_sample_GGX(self):
+
+        size = self.mipmap_size
+        nb_samples = self.nb_samples
+        nb_levels = self.getMaxLevel(self.specular_size) - self.getMaxLevel(self.prefilter_stop_size)
+        filename = "/tmp/samplesGGX_{}_{}_{}.bin".format(nb_samples, size, nb_levels)
+        if os.path.isfile(filename):
+            return filename
+
+        cmd = "{} {} {} {} {}".format(samplesGGX_cmd, filename, nb_samples, size, nb_levels)
+        execute_command(cmd)
+        return filename
 
     def compute_irradiance(self):
 
@@ -246,11 +267,21 @@ class ProcessEnvironment(object):
     def process_cubemap_specular_create_prefilter(self, specular_size, prefilter_stop_size, fixedge, output_filename):
         fix_flag = "-f" if fixedge else ""
 
-        cmd = "{} -s {} -e {} -n {} {} {} {}".format(
-            envPrefilter_cmd, specular_size, prefilter_stop_size,
-            self.nb_samples, fix_flag, self.mipmap_pattern,
-            output_filename)
-        execute_command(cmd)
+        if self.prefilterGPU:
+            print "executing gpu prefiltering"
+            self.prefilterGPU.run_ggx(output_filename,
+                                      size=specular_size,
+                                      num_samples=self.nb_samples,
+                                      fix_edge=fixedge,
+                                      limit_size=prefilter_stop_size,
+                                      sample_file=self.sample_file)
+        else:
+            print "executing cpu prefiltering"
+            cmd = "{} -s {} -e {} -n {} {} {} {}".format(
+                envPrefilter_cmd, specular_size, prefilter_stop_size,
+                self.nb_samples, fix_flag, self.mipmap_pattern,
+                output_filename)
+            execute_command(cmd)
 
     def specular_create_prefilter_panorama(self, specular_size, prefilter_stop_size):
         max_level = self.getMaxLevel(specular_size)
@@ -314,9 +345,6 @@ class ProcessEnvironment(object):
 
     def specular_create_prefilter(self, specular_size, prefilter_stop_size):
 
-        # create mipmap to accelerate prefiltering
-        self.cubemap_specular_create_mipmap(self.mipmap_size)
-
         self.specular_create_prefilter_panorama(specular_size, prefilter_stop_size)
         self.specular_create_prefilter_cubemap(specular_size, prefilter_stop_size)
 
@@ -326,15 +354,23 @@ class ProcessEnvironment(object):
         if background_samples is not None:
             samples = background_samples
 
-        # compute it one time for panorama
         output_filename = "/tmp/background.tiff"
-        fixedge = "-f" if self.fixedge else ""
-        cmd = "{} -s {} -n {} -r {} {} {} {}".format(
-            envBackground_cmd, background_size, samples,
-            background_blur, fixedge, self.cubemap_highres,
-            output_filename)
+        if self.prefilterGPU:
+            print "executing gpu prefiltering"
+            self.prefilterGPU.run_background_blur(output_filename,
+                                                  size=background_size,
+                                                  num_samples=samples,
+                                                  fix_edge=self.fixedge,
+                                                  radius=background_blur)
+        else:
+            # compute it one time for panorama
+            fixedge = "-f" if self.fixedge else ""
+            cmd = "{} -s {} -n {} -r {} {} {} {}".format(
+                envBackground_cmd, background_size, samples,
+                background_blur, fixedge, self.cubemap_highres,
+                output_filename)
 
-        execute_command(cmd)
+            execute_command(cmd)
 
         # packer use a pattern, fix cubemap packer ?
         file_basename = os.path.join(self.output_directory, "{}_cubemap_{}_{}".format(
@@ -392,22 +428,29 @@ class ProcessEnvironment(object):
         # generate thumbnail
         self.thumbnail_create(self.thumbnail_size)
 
+        # create mipmap to accelerate prefiltering
+        # so it needs to be done before background and specular
+        self.cubemap_specular_create_mipmap(self.mipmap_size)
+
+        # try:
+        from prefilter_opencl import Prefilter
+        print "prepare gpu prefiltering"
+        self.prefilterGPU = Prefilter(self.mipmap_pattern)
+        self.sample_file = self.create_sample_GGX()
+        # except:
+        #     print "no opencl found fallback to cpu computation"
+
         # generate background
         self.background_create(self.background_size, self.background_blur)
 
-        if self.process_only_bg:
-            if self.can_comppress:
-                self.compress()
-            return
+        # generate prefilter ue4 specular
+        self.specular_create_prefilter(self.specular_size, self.prefilter_stop_size)
 
         # generate irradiance*PI panorama/cubemap/sph
         self.compute_irradiance()
 
         # precompute lut brdf
         self.compute_brdf_lut_ue4()
-
-        # generate prefilter ue4 specular
-        self.specular_create_prefilter(self.specular_size, self.prefilter_stop_size)
 
         # register mipspecular
         self.register_mipmap_cubemap()
@@ -439,7 +482,6 @@ if __name__ == "__main__":
                         help="cubemap size for background texture", default=256)
     parser.add_argument("--backgroundBlur", action="store", dest="background_blur",
                         help="how to blur the background, it uses the same code of prefiltering", default=0.1)
-    parser.add_argument("--bgonly", action="store_true", help="process only background")
     parser.add_argument("--fixedge", action="store_true", help="fix edge for cubemap")
     parser.add_argument("--pretty", action="store_true", help="generate a config file pretty for human")
 
@@ -450,7 +492,6 @@ if __name__ == "__main__":
     print(args)
     process = ProcessEnvironment(input_file,
                                  output_directory,
-                                 process_only_background=args.bgonly,
                                  thumbnail_size=int(args.thumbnail_size),
                                  background_samples=int(args.background_samples),
                                  background_size=int(args.background_size),

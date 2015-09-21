@@ -17,17 +17,20 @@ static constant float4 CubemapFace[6][3] = {
     {{-1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 0.0f} } // z negatif
 };
 
-static float radicalInverse_VdC(uint bits) {
+
+static float2 hammersley(uint i, uint N) {
+    uint bits = i;
     bits = (bits << 16) | (bits >> 16);
     bits = ((bits & 0x55555555) << 1) | ((bits & 0xAAAAAAAA) >> 1);
     bits = ((bits & 0x33333333) << 2) | ((bits & 0xCCCCCCCC) >> 2);
     bits = ((bits & 0x0F0F0F0F) << 4) | ((bits & 0xF0F0F0F0) >> 4);
     bits = ((bits & 0x00FF00FF) << 8) | ((bits & 0xFF00FF00) >> 8);
-    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
-}
 
-static float2 hammersley(unsigned int i, unsigned int N) {
-    return (float2)((float)(i)/(float)(N), radicalInverse_VdC(i));
+    double u = (double)(i) / (double)(N);
+    double v = (double)(bits);
+    v = v * 2.3283064365386963e-10;
+
+    return (float2)((float)(u), (float)(v));
 }
 
 static double D_GGX( float NdotH, float alpha)
@@ -39,9 +42,9 @@ static double D_GGX( float NdotH, float alpha)
 }
 
 constant float3 ViewVector = (float3)(0,0,1);
-kernel void computeLightVector( global __write_only float4* precomputedLightVector,
-                                global __write_only float* nol,
-                                volatile global __read_write int* currentLightVectorIndex,
+kernel void computeLightVector( global write_only float4* precomputedLightVector,
+                                global write_only float* nol,
+                                volatile global read_write int* currentLightVectorIndex,
                                 const uint numValidSamples,
                                 const uint numSamples,
                                 const uint size,
@@ -100,6 +103,51 @@ kernel void computeLightVector( global __write_only float4* precomputedLightVect
         printf("problem");
     precomputedLightVector[index] = result;
     nol[index] = NoL;
+}
+
+
+
+kernel void computeTapVector( global __write_only float4* tapVector,
+                              global __write_only float* weight,
+                              const float sigmaSqr,
+                              const float radius,
+                              const uint numSamples)
+{
+    uint i = get_global_id(0);
+
+    float2 Xi = hammersley( i, numSamples );
+
+    float u = Xi[0];
+    float v = Xi[1];
+    float angle = u * PI * 2.0f;
+
+    // uniform
+    float r = sqrt( v ) * radius;
+
+    // not uniform
+    //float r = v * radius;
+
+    float x = r * cos(angle);
+    float y = r * sin(angle);
+
+    // compute gaussian weight
+    // https://en.wikipedia.org/wiki/Gaussian_blur
+    // http://stackoverflow.com/questions/17841098/gaussian-blur-standard-deviation-radius-and-kernel-size
+    // http://http.developer.nvidia.com/GPUGems3/gpugems3_ch40.html
+    //float standardDeviation = 0.84089642;
+    //float sigmaSqr = sigma*sigma;
+    // weight = exp(-(x*x + y*y)/twoStandardDeviationSqr)/( PI * twoStandardDeviationSqr );
+    float w = exp(-0.5f*(x*x + y*y)/sigmaSqr);
+
+    float4 H;
+    H[0] = x;
+    H[1] = y;
+    H[2] = 1.0f;
+    H[3] = w;
+    H = normalize(H);
+
+    tapVector[i] = H;
+    weight[i] = w;
 }
 
 // major axis
@@ -300,4 +348,44 @@ kernel void computeGGX( uint face,
     prefilteredColor = prefilteredColor / totalWeight;
     // prefilteredColor = read_imagef( cubemap0, cubemapSampler, uv); // (float4)(i*1.0/1024,j*1.0/1024, (float)(face), (float)(face) ));
     write_imagef( faceResult, (int2)(i,j), prefilteredColor );
+}
+
+
+
+kernel void computeBackground( uint face,
+                               write_only image2d_t faceResult,
+                               global read_only float4* tapVector,
+                               const float totalWeight,
+                               const uint nbSamples,
+                               const uint fixup,
+                               read_only image2d_array_t cubemap0)
+{
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+
+    uint size = get_image_width(faceResult);
+
+    float4 N = texelCoordToVect( face, (float)(i), (float)(j), size, (bool)fixup );
+    float4 finalColor = (float4)(0.0f, 0.0f, 0.0f, 0.0f );
+
+    float4 UpVector = fabs(N[2]) < 0.999 ? (float4)(0,0,1,0) : (float4)(1,0,0,0);
+    float4 TangentX = normalize( cross( UpVector, N ) );
+    float4 TangentY = normalize( cross( N, TangentX ) );
+
+    float4 color, uv, L;
+    float4 LworldSpace;
+    for( uint n = 0; n < nbSamples; n++ ) {
+
+        L = tapVector[ n ];
+        LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
+
+        // get uv, face
+        uv = vectToTexelCoord( LworldSpace );
+
+        color = read_imagef( cubemap0, cubemapSampler, uv );
+        finalColor += color * L[3];
+    }
+
+    finalColor = finalColor / totalWeight;
+    write_imagef( faceResult, (int2)(i,j), finalColor );
 }

@@ -1,3 +1,4 @@
+import argparse
 import pyopencl as cl
 import pyopencl.array as cl_array
 import shutil
@@ -16,30 +17,28 @@ def print_device(device):
     print "Work group {}".format(device.max_work_group_size)
 
 
-class PrefilterGGX:
+class Prefilter:
 
-    def __init__(self, **kwargs):
+    def __init__(self, input, **kwargs):
         self.ctx = cl.create_some_context()
         self.queue = cl.CommandQueue(self.ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
-        #platform = cl.get_platforms()[0]
-        #device_list = platform.get_devices(cl.device_type.GPU)
+        # platform = cl.get_platforms()[0]
+        # device_list = platform.get_devices(cl.device_type.GPU)
         device = self.ctx.devices[0]
         print_device(device)
 
-        self.size = kwargs.get("size", 256)
-        self.input_filename = kwargs.get("input")
-        self.limit_size = kwargs.get("limit_size", 8)
-        self.output = kwargs.get("output", "./output.tif")
+        self.input_filename = input
         # self.input_filename = "/tmp/specular_%d.tif"
-        self.num_samples = kwargs.get("num_samples", 4096)
-        self.fix_edge = kwargs.get("fix_edge", False)
+
         self.original_cubemap_size = None
         self.d_cubemap_levels = None
-        self.filename_image_roughness0 = None
+        self.samples = []
+        self.init_data()
 
     def load_program(self, filename):
         # read in the OpenCL source file as a string
-        f = open(filename, 'r')
+        python_dirname = os.path.dirname(os.path.realpath(__file__))
+        f = open(os.path.join(python_dirname, filename), 'r')
         fstr = "".join(f.readlines())
 
         # inject dymanic argument
@@ -97,32 +96,44 @@ class PrefilterGGX:
             cubemap_filenames.append(self.input_filename)
 
         cubemap_levels = []
-        cubemap_size = []
+        cubemap_levels_info = []
+
         for filename in cubemap_filenames:
             cubemap = read_image_cubemap(filename)
             size = cubemap[0].shape[0]
-
-            # keep a reference to the image that will be used as roughness 0
-            if size == self.size:
-                self.filename_image_roughness0 = filename
-
             d_cubemap = self.d_create_image_cubemap(cubemap)
             cubemap_levels.append(d_cubemap)
-            cubemap_size.append(size)
-        self.d_cubemap_levels = cubemap_levels
-        self.original_cubemap_size = cubemap_size[0]
+            cubemap_levels_info.append({"size": size,
+                                        "filename": filename,
+                                        "d_cubemap": d_cubemap})
 
-        self.h_precomputed_light = numpy.zeros(self.num_samples, dtype=cl_array.vec.float4)
-        self.h_nol = numpy.zeros((self.num_samples), dtype=numpy.float32)
+        self.d_cubemap_levels = cubemap_levels
+        self.cubemap_levels = cubemap_levels_info
+        self.original_cubemap_size = cubemap_levels_info[0]["size"]
+
+        self.load_program("ggx.cl")
+
+    def init_specular_filtering(self, size, num_samples, sample_file, nb_levels):
+
+        self.h_precomputed_light = numpy.zeros(num_samples, dtype=cl_array.vec.float4)
+        self.h_nol = numpy.zeros((num_samples), dtype=numpy.float32)
         self.h_current_light_index = numpy.zeros((1), dtype=numpy.uint32)
 
-        self.d_precomputed_lightvector_write = cl.Buffer(self.ctx,
-                                                         cl.mem_flags.WRITE_ONLY,
-                                                         self.num_samples * 4 * 4)
+        if sample_file:
+            print "reading samples from file {} with {} levels ".format(sample_file, nb_levels)
+            self.samples = []
+            f = open(sample_file, 'rb')
+            for i in range(nb_levels):
+                array = numpy.fromfile(f, dtype=cl_array.vec.float4, count=num_samples)
+                self.samples.append(array)
+        else:
+            self.d_precomputed_lightvector_write = cl.Buffer(self.ctx,
+                                                             cl.mem_flags.WRITE_ONLY,
+                                                             num_samples * 4 * 4)
 
         self.d_precomputed_lightvector_read = cl.Buffer(self.ctx,
                                                         cl.mem_flags.READ_ONLY,
-                                                        self.num_samples * 4 * 4)
+                                                        num_samples * 4 * 4)
 
         self.d_current_light_index = cl.Buffer(
             self.ctx,
@@ -133,12 +144,22 @@ class PrefilterGGX:
                                cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR,
                                hostbuf=self.h_nol)
 
-        self.load_program("ggx.cl")
+    def get_sequence(self, level, roughness_linear, num_samples):
 
-    def get_sequence(self, roughness_linear):
+        # predefined samples from file
+        if len(self.samples):
+            self.h_precomputed_light = self.samples[level-1]
+            sum_weight = 0.0
+            for i in self.h_precomputed_light:
+                sum_weight += i[2]
 
-        try_sequence = self.num_samples
+            return {
+                'sum': sum_weight,
+                'tries': 1,
+                'sequence': num_samples
+            }
 
+        try_sequence = num_samples
         h_precomputed_lightvector = self.h_precomputed_light
 
         h_nol = self.h_nol
@@ -171,7 +192,7 @@ class PrefilterGGX:
                                                     d_nol,
                                                     d_current_light_index,
                                                     numpy.uint32(try_sequence),
-                                                    numpy.uint32(self.num_samples),
+                                                    numpy.uint32(num_samples),
                                                     numpy.uint32(self.original_cubemap_size),
                                                     numpy.float32(roughness_linear))
 
@@ -179,8 +200,8 @@ class PrefilterGGX:
             nb_valid_samples = h_current_light_index[0]
             # print "computeLightVector duration {} valids {} / {}".format(
             #     1e-9*(event.profile.end - event.profile.start), nb_valid_samples, try_sequence)
-            if nb_valid_samples != self.num_samples:
-                try_sequence += self.num_samples - nb_valid_samples
+            if nb_valid_samples != num_samples:
+                try_sequence += num_samples - nb_valid_samples
                 continue
 
             break
@@ -188,35 +209,43 @@ class PrefilterGGX:
         cl.enqueue_copy(self.queue,
                         h_precomputed_lightvector,
                         self.d_precomputed_lightvector_write).wait()
+        # for i in h_precomputed_lightvector:
+        #     print i[0], i[1], i[2], i[3]
 
         cl.enqueue_copy(self.queue, h_nol, d_nol).wait()
 
         sum_weight = numpy.add.reduce(h_nol.astype(numpy.double))
         # print "compute sequence in {} tries with {} sequence".format(nb_try, try_sequence)
+
         return {
             'sum': sum_weight,
             'tries': nb_try,
             'sequence': try_sequence
         }
 
-    def compute_level(self, size, roughness_linear, filename):
+    def compute_level(self, level, size, roughness_linear, filename, num_samples, fix_edge):
 
         start_tick = time.time()
 
-        num_light_vector = self.num_samples
-        sequence = self.get_sequence(roughness_linear)
-        print "compute sequence in {} attempts, sequence {} for roughness {} : {} seconds".format(
-            sequence['tries'],
-            sequence['sequence'],
-            roughness_linear,
-            (time.time() - start_tick))
+        num_light_vector = num_samples
+        total_weight = 0.0
 
-        total_weight = sequence['sum']
-
-        if roughness_linear == 0.0:
+        if roughness_linear != 0.0:
+            sequence = self.get_sequence(level, roughness_linear, num_samples)
+            print "compute sequence in {} attempts, sequence {} for roughness {} : {} seconds".format(
+                sequence['tries'],
+                sequence['sequence'],
+                roughness_linear,
+                (time.time() - start_tick))
+            total_weight = sequence['sum']
+        else:
+            self.h_precomputed_light = numpy.zeros(num_samples, dtype=cl_array.vec.float4)
             total_weight = 1.0
             num_light_vector = 1
             # force lod 0
+            self.h_precomputed_light[0][0] = 0.0
+            self.h_precomputed_light[0][1] = 0.0
+            self.h_precomputed_light[0][2] = 1.0
             self.h_precomputed_light[0][3] = 0.0
 
         # copy for the buffer in readonly
@@ -249,7 +278,7 @@ class PrefilterGGX:
                                             self.d_precomputed_lightvector_read,
                                             numpy.float32(total_weight),
                                             numpy.uint32(num_light_vector),
-                                            numpy.uint32(1 if self.fix_edge else 0),
+                                            numpy.uint32(1 if fix_edge else 0),
                                             *self.d_cubemap_levels)
             cl.enqueue_copy(self.queue,
                             h_face_result,
@@ -275,25 +304,131 @@ class PrefilterGGX:
         sys.stdout.write(" : {} seconds\n".format((time.time() - start_tick)))
         sys.stdout.flush()
 
-    def execute(self):
-        self.init_data()
+    def get_background_sequence(self, radius, num_samples):
+        # 3*sigma rules
+        sigma = radius / 3.0
+        sigmaSqr = sigma * sigma
 
-        end_size = self.limit_size
-        output = self.output
-        compute_start_size = self.size
+        d_precomputed_tap = cl.Buffer(self.ctx,
+                                      cl.mem_flags.READ_WRITE,
+                                      num_samples * 4 * 4)
+        h_weight = numpy.zeros((num_samples), dtype=numpy.float32)
+        d_weight = cl.Buffer(self.ctx,
+                             cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR,
+                             hostbuf=h_weight)
+
+        event = self.program.computeTapVector(self.queue,
+                                              (num_samples,),
+                                              None,
+                                              d_precomputed_tap,
+                                              d_weight,
+                                              numpy.float32(sigmaSqr),
+                                              numpy.float32(radius),
+                                              numpy.uint32(num_samples))
+
+        cl.enqueue_copy(self.queue, h_weight, d_weight).wait()
+
+        sum_weight = numpy.add.reduce(h_weight.astype(numpy.double))
+        #print h_weight
+        return {
+            'sum': sum_weight,
+            'tap_vector': d_precomputed_tap
+        }
+
+    def run_background_blur(self, output_file, **kwargs):
+        size = kwargs.get("size")
+        num_samples = kwargs.get("num_samples")
+        radius = kwargs.get("radius")
+
+        start_tick = time.time()
+
+        cm_levels = self.cubemap_levels
+        level = [f for f in cm_levels if f["size"] == size]
+        d_cubemap_with_same_output_size = level[0]["d_cubemap"] if level else cm_levels[0]["d_cubemap"]
+
+        filename = output_file
+        sequence = self.get_background_sequence(radius, num_samples)
+        print "compute background samples, sequence {} for radius {} : {} seconds".format(
+            num_samples,
+            radius,
+            (time.time() - start_tick))
+
+        d_tap_vector = sequence['tap_vector']
+        total_weight = sequence['sum']
+
+        sys.stdout.write("compute average blur size {} radius {} - ".format(size, radius))
+        sys.stdout.flush()
+        cubemap_result = []
+        start_tick = time.time()
+        event = None
+        for face in range(6):
+            # print "Face {}".format(face)
+            h_face_result = numpy.zeros((size, size), dtype=cl_array.vec.float4)
+            d_face_result = cl.Image(self.ctx,
+                                     cl.mem_flags.WRITE_ONLY,
+                                     cl.ImageFormat(cl.channel_order.RGBA, cl.channel_type.FLOAT),
+                                     (size, size))
+
+            # create an image to get the result
+            # it should be full mipmap chain
+            event = self.program.computeBackground(self.queue,
+                                                   (size, size),
+                                                   None,
+                                                   numpy.uint32(face),
+                                                   d_face_result,
+                                                   d_tap_vector,
+                                                   numpy.float32(total_weight),
+                                                   numpy.uint32(num_samples),
+                                                   numpy.uint32(1 if kwargs.get("fix_edge") else 0),
+                                                   d_cubemap_with_same_output_size)
+            cl.enqueue_copy(self.queue,
+                            h_face_result,
+                            d_face_result,
+                            origin=(0, 0, 0),
+                            region=(size, size, 1)).wait()
+            self.queue.finish()
+
+            cubemap_result.append(h_face_result)
+            sys.stdout.write("{:5.3f}s ".format(1e-9 * (event.profile.end - event.profile.start)))
+            sys.stdout.flush()
+
+        write_image_cubemap(cubemap_result, filename)
+
+        sys.stdout.write(" : {} seconds\n".format((time.time() - start_tick)))
+        sys.stdout.flush()
+
+    def run_ggx(self, output_directory, **kwargs):
+        size = kwargs.get("size")
+        num_samples = kwargs.get("num_samples")
+        limit_size = kwargs.get("limit_size")
+
+        sample_file = kwargs.get("sample_file", None)
+
+        compute_start_size = size
         total_mipmap = math.log(compute_start_size) / math.log(2)
-        end_mipmap = total_mipmap - math.log(end_size) / math.log(2)
+        end_mipmap = total_mipmap - math.log(limit_size) / math.log(2)
+
+        nb_levels = int(end_mipmap)
+        self.init_specular_filtering(size, num_samples, sample_file, nb_levels)
+
+        cm_levels = self.cubemap_levels
+        # keep a reference to the image that will be used as roughness 0
+        level = [f for f in cm_levels if f['size'] == size]
+        filename_image_roughness0 = level[0]["filename"] if level else None
+
+        output = output_directory
+
         total_mipmap = int(total_mipmap)
         print "{} mipmaps levels will be generated from {}x{} to {}x{}".format(
-            end_mipmap + 1, compute_start_size, compute_start_size, end_size, end_size)
+            end_mipmap + 1, compute_start_size, compute_start_size, limit_size, limit_size)
 
         pattern_output = "{}_{}.tif"
 
         start_mipmap = 0
         # roughness 0 is a simple copy if found in mipmap files
-        if self.filename_image_roughness0:
+        if filename_image_roughness0:
             start_mipmap = 1
-            shutil.copyfile(self.filename_image_roughness0, pattern_output.format(output, 0))
+            shutil.copyfile(filename_image_roughness0, pattern_output.format(output, 0))
 
         start = 0.0
         stop = 1.0
@@ -314,7 +449,7 @@ class PrefilterGGX:
             if i <= end_mipmap:
                 print "compute level {} with roughness {} {} x {} to {}".format(
                     i, roughness_linear, size, size, filename)
-                self.compute_level(size, roughness_linear, filename)
+                self.compute_level(i, size, roughness_linear, filename, num_samples, kwargs.get("fix_edge"))
             else:
                 # write dummy cubemap
                 face = numpy.empty((size, size), dtype=cl_array.vec.float4)
@@ -399,15 +534,41 @@ def test_image():
     write_image_cubemap(cubemap, "out.tif")
 
 
-def test_case():
-    #test_image()
-    filename = "./test2.tif"
-#    filename = "/tmp/specular_%d.tif"
-    output_size = 256
-    output = "out"
-    fixup = False
-    prg = PrefilterGGX(input=filename, size=output_size, output=output, fix_edge=fixup)
-    prg.execute()
-
 if __name__ == "__main__":
-    test_case()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("file", help="cubemap environment [ cubemap.tif cubemap_%d.tif ]")
+    parser.add_argument("output", help="output directory")
+    parser.add_argument("--sampleFile", action="store", dest="sample_file",
+                        help="use file to use for samples by roughness", default=None)
+    parser.add_argument("--ggxSamples", action="store", dest="ggx_samples",
+                        help="nb samples to compute environment 1 to 65536", default=4096)
+    parser.add_argument("--size", action="store", dest="size",
+                        help="cubemap size for prefiltered texture", default=256)
+    parser.add_argument("--fixedge", action="store_true", help="fix edge for cubemap")
+    parser.add_argument("--backgroundSamples", action="store", dest="background_samples",
+                        help="nb samples to compute background 1 to 65536", default=4096)
+    parser.add_argument("--backgroundSize", action="store", dest="background_size",
+                        help="cubemap size for background texture", default=256)
+    parser.add_argument("--backgroundBlur", action="store", dest="background_blur",
+                        help="how to blur the background, it uses the same code of prefiltering", default=0.1)
+
+    args = parser.parse_args()
+    input_file = args.file
+    output_directory = args.output
+
+    print(args)
+
+    process = Prefilter(input_file)
+
+    process.run_background_blur(os.path.join(output_directory, "background.tif"),
+                                size=int(args.background_size),
+                                num_samples=int(args.background_samples),
+                                radius=float(args.background_blur),
+                                fix_edge=args.fixedge)
+
+    process.run_ggx(output_directory,
+                    size=int(args.size),
+                    num_samples=int(args.ggx_samples),
+                    fix_edge=args.fixedge,
+                    limit_size=8,
+                    sample_file=args.sample_file)
