@@ -7,6 +7,8 @@
 #include "Math"
 #include "Cubemap"
 
+#include <tbb/parallel_for.h>
+
 #include <OpenImageIO/imageio.h>
 #include <OpenImageIO/filter.h>
 #include <OpenImageIO/imagebuf.h>
@@ -570,6 +572,8 @@ void Cubemap::computePrefilterCubemapAtLevel( float roughnessLinear, const Cubem
 }
 
 
+
+#if 0
 void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup, bool backgroundAverage ) {
 
 
@@ -615,6 +619,108 @@ void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cu
         }
     }
 }
+#else
+
+
+struct Prefilter {
+    static void inline pixelOperator(const Cubemap& cubemap, uint nbSamples, uint nativeResolution, const Vec3f& direction, Vec3f& result ) {
+        result = cubemap.prefilterEnvMapUE4( direction, nbSamples );
+    }
+};
+
+struct Background {
+    static void inline pixelOperator(const Cubemap& cubemap, uint nbSamples, uint nativeResolution, const Vec3f& direction, Vec3f& result ) {
+        result = cubemap.averageEnvMap( direction, nbSamples );
+    }
+};
+
+struct Copy {
+    static void inline pixelOperator(const Cubemap& cubemap, uint nbSamples, uint nativeResolution, const Vec3f& direction, Vec3f& result ) {
+        cubemap.getImages(nativeResolution).getSample( direction, result);
+    }
+};
+
+template<typename T>
+struct Worker {
+    uint _samplePerPixel, _size, _face, _fixup;
+    float _roughnessLinear;
+    uint _nbSamples;
+    const Cubemap& _cubemap;
+    uint _nativeResolution;
+    float* _dataFace;
+
+    Worker(uint samplePerPixel, uint size, uint face, bool fixup, float roughnessLinear, uint nbSamples, const Cubemap& cubemap, uint nativeResolution, float* dataFace): _samplePerPixel(samplePerPixel),_size(size), _face(face), _fixup(fixup ? 1 : 0), _roughnessLinear(roughnessLinear), _nbSamples(nbSamples), _cubemap(cubemap), _nativeResolution(nativeResolution), _dataFace(dataFace)
+    {
+    }
+
+    void operator()(const tbb::blocked_range<uint>& r) const {
+
+        for ( uint j = r.begin(); j != r.end(); ++j ) {
+
+            int lineIndex = j*_samplePerPixel*_size;
+
+            for ( uint i = 0; i < _size; i++ ) {
+
+                Vec3f direction, resultColor;
+                int index = lineIndex + i*_samplePerPixel;
+
+                texelCoordToVect( _face, float(i), float(j), _size, &direction[0], _fixup );
+
+                T::pixelOperator(_cubemap, _nbSamples, _nativeResolution, direction, resultColor);
+
+                _dataFace[ index     ] = resultColor[0];
+                _dataFace[ index + 1 ] = resultColor[1];
+                _dataFace[ index + 2 ] = resultColor[2];
+            }
+
+        }
+    }
+};
+
+// template<typename T, PixelOperation pixelO = BackgroundAverage>
+// struct WorkerBackground : Worker<T>
+// {
+//     WorkerBackground(uint samplePerPixel, uint size, uint face, bool fixup, float roughnessLinear, uint nbSamples, const Cubemap& cubemap, uint nativeResolution, float* dataFace): Worker<T>( samplePerPixel, size, face, fixup ? 1 : 0, roughnessLinear, nbSamples, cubemap, nativeResolution, dataFace) {}
+
+//     void inline pixelOperator(const Vec3f& direction, Vec3f& result ) const {
+//         result = this->_cubemap.averageEnvMap( direction, this->_nbSamples );
+//     }
+// };
+
+// template<typename T, PixelOperation pixelO = Copy>
+// struct WorkerRouhgness0 : Worker<T>
+// {
+//     WorkerRouhgness0(uint samplePerPixel, uint size, uint face, bool fixup, float roughnessLinear, uint nbSamples, const Cubemap& cubemap, uint nativeResolution, float* dataFace): Worker<T>( samplePerPixel, size, face, fixup ? 1 : 0, roughnessLinear, nbSamples, cubemap, nativeResolution, dataFace) {}
+
+//     void inline pixelOperator(const Vec3f& direction, Vec3f& result ) const {
+//         this->_cubemap.getImages(this->_nativeResolution).getSample( direction, result);
+//     }
+// };
+
+void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cubemap, uint nbSamples, bool fixup, bool backgroundAverage ) {
+
+    // find native resolution to copy pixel
+    uint size = getSize();
+    uint nativeResolution = 0;
+    for ( uint i = 0; i < cubemap._levels.size(); i++) {
+        if ( cubemap.getImages(i).getSize() == size ) {
+            nativeResolution = i;
+            break;
+        }
+    }
+    float* dataFace = getImages().imageFace(face);
+
+    if ( roughnessLinear == 0.0 || nbSamples ==1 ) {
+        parallel_for(tbb::blocked_range<uint>(0, size), Worker<Copy>(getSamplePerPixel(), size, face, fixup, 0.0, 1, cubemap, nativeResolution, dataFace) );
+    } else {
+        if ( backgroundAverage )
+            parallel_for(tbb::blocked_range<uint>(0, size), Worker<Background>(getSamplePerPixel(), size, face, fixup, roughnessLinear, nbSamples, cubemap, nativeResolution, dataFace) );
+        else
+            parallel_for(tbb::blocked_range<uint>(0, size), Worker<Prefilter>(getSamplePerPixel(), size, face, fixup, roughnessLinear, nbSamples, cubemap, nativeResolution, dataFace) );
+    }
+}
+
+#endif
 
 
 void Cubemap::computeBackground( const std::string& output, int startSize, uint nbSamples, float radius , const bool fixup ) {

@@ -31,6 +31,7 @@ endif()
 
 
 find_package(Boost COMPONENTS system )
+find_package(TBB)
 
 find_package(PNG)
 find_package(TIFF)
@@ -40,6 +41,7 @@ find_package(OpenImageIO)
 
 include_directories(${OIIO_INCLUDE_DIR})
 include_directories( ${TIFF_INCLUDE_DIR} )
+include_directories( ${TBB_INCLUDE_DIR} )
 
 add_executable(envremap envremap.cpp)
 target_link_libraries(envremap ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} )
@@ -48,15 +50,16 @@ install(TARGETS envremap
   RUNTIME DESTINATION bin
 )
 
+
 add_executable(envIrradiance envIrradiance.cpp Cubemap.cpp )
-target_link_libraries(envIrradiance ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+target_link_libraries(envIrradiance ${TBB_LIBRARIES} ${PNG_LIBRARY} ${TIFF_LIBRARY} ${JPEG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS envIrradiance
   RUNTIME DESTINATION bin
 )
 
 add_executable(cubemapPacker cubemapPacker.cpp  Cubemap.cpp)
-target_link_libraries(cubemapPacker ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+target_link_libraries(cubemapPacker ${TBB_LIBRARIES} ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS cubemapPacker
   RUNTIME DESTINATION bin
@@ -64,7 +67,7 @@ install(TARGETS cubemapPacker
 
 
 add_executable(envPrefilter envPrefilter.cpp Cubemap.cpp)
-target_link_libraries(envPrefilter ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+target_link_libraries(envPrefilter ${TBB_LIBRARIES} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS envPrefilter
   RUNTIME DESTINATION bin
@@ -72,14 +75,14 @@ install(TARGETS envPrefilter
 
 
 add_executable(envBackground envBackground.cpp Cubemap.cpp)
-target_link_libraries(envBackground ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+target_link_libraries(envBackground ${TBB_LIBRARIES} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS envBackground
   RUNTIME DESTINATION bin
 )
 
 add_executable(samplesGGX samplesGGX.cpp Cubemap.cpp)
-target_link_libraries(samplesGGX ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+target_link_libraries(samplesGGX ${TBB_LIBRARIES} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS samplesGGX
   RUNTIME DESTINATION bin
@@ -92,7 +95,7 @@ install(TARGETS envBRDF
 )
 
 add_executable(panoramaPacker panoramaPacker.cpp)
-target_link_libraries(panoramaPacker ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+target_link_libraries(panoramaPacker ${TBB_LIBRARIES} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS panoramaPacker
   RUNTIME DESTINATION bin

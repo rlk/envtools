@@ -90,6 +90,7 @@ class ProcessEnvironment(object):
         self.thumbnail_size = kwargs.get("thumbnail_size", 256)
         self.fixedge = kwargs.get("fixedge", False)
         self.write_by_channel = kwargs.get("write_by_channel", False)
+        self.force_cpu = kwargs.get("force_cpu", False)
 
         self.specular_size = kwargs.get("specular_size", 512)
         self.specular_file_base = "specular"
@@ -432,13 +433,16 @@ class ProcessEnvironment(object):
         # so it needs to be done before background and specular
         self.cubemap_specular_create_mipmap(self.mipmap_size)
 
-        # try:
-        from prefilter_opencl import Prefilter
-        print "prepare gpu prefiltering"
-        self.prefilterGPU = Prefilter(self.mipmap_pattern)
-        self.sample_file = self.create_sample_GGX()
-        # except:
-        #     print "no opencl found fallback to cpu computation"
+        if not self.force_cpu:
+            try:
+                from prefilter_opencl import Prefilter
+                print "prepare gpu prefiltering"
+                self.prefilterGPU = Prefilter(self.mipmap_pattern)
+                self.sample_file = self.create_sample_GGX()
+            except:
+                print "no opencl found fallback to cpu computation"
+        else:
+            print "force computation on cpu"
 
         # generate background
         self.background_create(self.background_size, self.background_blur)
@@ -468,6 +472,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("file", help="hdr environment [ .hdr .tif .exr ]")
     parser.add_argument("output", help="output directory")
+    parser.add_argument("--force-cpu", action="store_true", dest="force_cpu",
+                        help="force to compute en cpu, no gpu usage")
     parser.add_argument("--write-by-channel", action="store_true", dest="write_by_channel",
                         help="write by channel all red then green then blue ...")
     parser.add_argument("--nbSamples", action="store", dest="nb_samples",
@@ -501,5 +507,6 @@ if __name__ == "__main__":
                                  write_by_channel=args.write_by_channel,
                                  prefilter_stop_size=8,
                                  fixedge=args.fixedge,
-                                 pretty=args.pretty)
+                                 pretty=args.pretty,
+                                 force_cpu=args.force_cpu)
     process.run()
