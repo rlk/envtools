@@ -16,8 +16,8 @@
 
 OIIO_NAMESPACE_USING
 
-void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, int fixup = 0);
-void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u, float& v);
+void texelCoordToVect(int face, float ui, float vi, uint size, float* dirResult, int fixup = 0);
+void vectToTexelCoord(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v);
 
 Cubemap::Cubemap()
 {
@@ -102,10 +102,10 @@ void Cubemap::fill( const Vec4f& fillValue )
 
 // See Peter-Pike Sloan paper for these coefficients
 static double SHBandFactor[NUM_SH_COEFFICIENT] = { 1.0,
-                                                    2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0,
-                                                    1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0,
-                                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // The 4 band will be zeroed
-                                                    - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0};
+                                                   2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0,
+                                                   1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0,
+                                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // The 4 band will be zeroed
+                                                   - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0};
 
 void EvalSHBasis(const float* dir, double* res )
 {
@@ -165,11 +165,11 @@ void Cubemap::getSample(const Vec3f& direction, Vec3f& color ) const
 }
 
 /** Original code from Ignacio Castaño
-* This formula is from Manne Öhrström's thesis.
-* Take two coordiantes in the range [-1, 1] that define a portion of a
-* cube face and return the area of the projection of that portion on the
-* surface of the sphere.
-**/
+ * This formula is from Manne Öhrström's thesis.
+ * Take two coordiantes in the range [-1, 1] that define a portion of a
+ * cube face and return the area of the projection of that portion on the
+ * surface of the sphere.
+ **/
 
 static float AreaElement( float x, float y )
 {
@@ -374,6 +374,9 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     std::cout << " ]" << std::endl;
 
 
+    this->ExtractDominantLight(SHr, SHg, SHb, NUM_SH_COEFFICIENT);
+
+
     for (int iFaceIdx = 0; iFaceIdx < 6; iFaceIdx++)
     {
         for (int y = 0; y < dstSize; y++)
@@ -411,6 +414,427 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     return dstCubemap;
 }
 
+//***************
+// One Dominant Light Extraction from
+// http://simonstechblog.blogspot.fr/2012/02/extracting-dominant-light-from.html#sh_extractDominantLight
+//
+// => LightDir = 0.3 * (-Le3, -Le1, Le2).norm + 0.59 * (-Le3_G, -Le1_G, Le2_G).norm + 0.11 * (-Le3_B, -Le1_B, Le2_B).norm
+//
+// "Optimal Linear" Direction: from "Local, Deformable Precomputed Radiance Transfer" http://www.ppsloan.org/publications/ldprt_final05.pdf
+//
+// Dir = (-Le3, -Le1, Le2)
+//
+// "A linear SH function is also circularly symmetric about an axis,
+// because the basis functions are linear polynomials in sx, sy, and sz.
+// That axis of symmetry for a linear SH vector f is given by normalizing
+// the 3D vector of its linear basis coefficients (−f11,−f1−1, f10).
+// We call this the optimal linear lobe for f . Higher order SH expansions
+// however can not be represented exactly as a finite sum of
+// rotated Legendre functions of the same order. Fortunately, error
+// approaches 0 rapidly as N increases."
+//
+// Generalization n Light in "stupid sh tricks" http://www.ppsloan.org/publications/StupidSH36.pdf :
+// "Extracting Conventional Lights from SH"
+//
+// http://amd-dev.wpengine.netdna-cdn.com/wordpress/media/2013/01/Chapter03-SBOT-March_of_The_Froblins.pdf Listing 10
+// for a sample code
+//
+void Cubemap::ExtractDominantLight(double SHr[], double SHg[],  double SHb[], const int numSHCoeff)
+{
+
+    // simon/Sloane basic equations
+    //LightDir = 0.3 * (-Le3, -Le1, Le2).norm + 0.59 * (-Le3_G, -Le1_G, Le2_G).norm + 0.11 * (-Le3_B, -Le1_B, Le2_B).norm
+    // then following froblins which optimised it into
+    //LightDir = (SHr[0].yzw * 0.3 + SHg[0].yzw * 0.59 + vSHb[0].yzw*0.11);
+    //LightDir = normalize(Vec3f(-LightDir.zx, LightDir.y) );
+
+    double LightDir[3];
+
+    double VecRedX, VecRedY, VecRedZ;
+    double VecGreenX, VecGreenY, VecGreenZ;
+    double VecBlueX,VecBlueY,VecBlueZ;
+
+    // we might iterate over band afterwards.
+    int idx =  0;
+    // for (int idx = 0; idx < numSHCoeff; i++)
+
+    // load into clarity
+    VecRedX =  SHr[ idx  ];
+    VecRedY =  SHr[ idx + 1 ];
+    VecRedZ =  SHr[ idx + 2 ];
+
+    VecGreenX = SHg[ idx ];
+    VecGreenY = SHg[ idx + 1];
+    VecGreenZ = SHg[ idx + 2];
+
+    VecBlueX = SHb[ idx ];
+    VecBlueY = SHb[ idx + 1 ];
+    VecBlueZ = SHb[ idx + 2 ];
+
+    // the Vec3(-LightDir.zx, LightDir.y) swizzle
+    LightDir[0] = - (VecRedZ * 0.3 + VecGreenZ * 0.59 + VecBlueZ*0.11);
+    LightDir[1] = - (VecRedX * 0.3 + VecGreenX * 0.59 + VecBlueX*0.11);
+    LightDir[2] =  (VecRedY * 0.3 + VecGreenY * 0.59 + VecBlueY*0.11);
+
+    // normalize it
+
+    const double k = 1.f / sqrt(LightDir[0] * LightDir[0] + LightDir[1] * LightDir[1] + LightDir[2] * LightDir[2]);
+    LightDir[0] *= k;
+    LightDir[1] *= k;
+    LightDir[2] *= k;
+
+    // sprout it
+    std::cout << "LightDir: [ " << LightDir[0]  << ", " << LightDir[1] << ", " << LightDir[3] << " ]" << std::endl;
+
+}
+
+/////////////////////////////////////////////////////////////
+// Cubemap Light Extract START
+/////////////////////////////////////////////////////////////
+template <typename T> T luminance(const T r, const T g, const T b) {
+  return r * 0.2125f + g * 0.7154f + b * 0.0721f;
+}
+
+// Gets the higher pixel Luminosity value of an float pixel RGB Array
+float Cubemap::computeImageMax ( const float * const pixels, const int stride, const uint size)
+{
+
+    int numLum = 0;
+    float maxLum = -1.f;
+    float pixel;
+
+    for ( int k = 0, l = size; k < l; k += stride )
+    {
+
+        pixel = luminance( pixels[ k ], pixels[ k + 1 ], pixels[ k + 2 ] );
+
+        if ( pixel > maxLum )
+        {
+
+            maxLum = pixel;
+            numLum = 1;
+
+        }
+        else if ( pixel == maxLum )
+        {
+
+            numLum++;
+
+        }
+
+    }
+
+    return maxLum;
+
+}
+
+// extract light direction from texture env cubemap
+void Cubemap::computeMainLightDirection ()
+{
+    const float * pixels;
+    float pixel;
+    float maxLum = -1.f;
+
+    int maxFace = -1;
+
+    int maxMip = _levels.size();
+    int stride = getSamplePerPixel();
+
+    int maxRealMipStart = maxMip - 1;
+
+    std::vector<int> mipMapLumNum;
+    std::vector<uint> mipMapWidth;
+    std::vector<uint> mipMapMaxPixel;
+    std::vector<float> mipMapMaxLum;
+
+
+    mipMapLumNum.resize(maxMip);
+    mipMapMaxLum.resize(maxMip);
+    mipMapMaxPixel.resize(maxMip);
+    mipMapWidth.resize(maxMip);
+
+    int mipMapLum = maxRealMipStart;
+
+    mipMapLumNum[ mipMapLum ] = 1;
+    mipMapMaxLum[ mipMapLum ] = -1;
+    mipMapMaxPixel[ mipMapLum ] = 0;
+    mipMapWidth[ mipMapLum ] = 1;
+
+    int m;
+    for ( m = maxRealMipStart - 1; m >= 0; m-- )
+    {
+
+        mipMapLumNum[ m ] = 0;
+        mipMapMaxLum[ m ] = 0;
+        mipMapMaxPixel[ m ] = -1;
+        // 1x1, 2x2, 4x4, 16x16
+        //mipMapWidth[ m ] = 2 * mipMapWidth[ m + 1 ];
+        mipMapWidth[ m ] = getImages(m).getSize();
+    }
+
+    // find brightest face
+    int face = 0;
+    int numSameFace = 0;
+
+    // need to loop over Mips as first level
+    // may be averaged to same values.
+    for ( m = 0; m < maxMip; m++ )
+    {
+
+        const MipLevel mip = getImages(maxRealMipStart -m);
+
+        // at This mipmap check all face for a winner
+        for ( face = 0; face < 6; face++ )
+        {
+
+            pixels = mip.imageFace(face);
+            pixel = computeImageMax( pixels, stride, mipMapWidth[ maxRealMipStart - m ] );
+
+            if ( pixel > maxLum )
+            {
+                maxLum = pixel;
+                maxFace = face;
+                numSameFace = 1;
+
+            }
+            else if ( pixel == maxLum )
+            {
+                numSameFace++;
+            }
+
+        }
+        // At this mip map Level if One face Wins
+        // with highest luminance, it's THE
+        // winner
+        if ( numSameFace == 1 )
+        {
+            break;
+        }
+
+    }
+
+    if ( numSameFace == 6 )
+    {
+        // all cube face alike... take first and be off
+
+        std::cout << "{ ";
+        std::cout << "  x: "  << 0;
+        std::cout << ", y: "  << 1;
+        std::cout << ", z: " << 0;
+        std::cout << ", face: " << 0;
+        std::cout << ", mipMapOffset: " << maxRealMipStart;
+        std::cout << ", maximumPixelOffset: " << 0;
+        std::cout << ", maximumLuminosity: " << maxLum;
+        std::cout << ", color: [" << 0 << ", " << 0 << ", " << 0 << "]";
+        std::cout << ", direction: [" << 0 << ", " << -1 << ", " << 0 << "]";
+        std::cout << " } ";
+
+        std::cout << std::endl;
+        return;
+    }
+
+    // restart from mip 0 on the choosen face
+    pixels = getImages(maxRealMipStart).imageFace(maxFace);
+    // store first mipmap in case it's unde mipmap all have same luminance
+
+    mipMapMaxLum[ mipMapLum ] = computeImageMax( pixels, stride, mipMapWidth[ maxRealMipStart ]);
+
+    // now recurse on that face to get most precise direction
+    int  maxLumNum; //number of pixel at max Luminosity
+
+    // where in pixel array
+    uint maxPixelOffset = 0, lastPixelOffset = 0;
+    uint pixelPos, x, y, width, k, p;
+
+    // start at mip 1
+    width = mipMapWidth[ maxRealMipStart ];
+
+    for ( m = 1; m < maxMip; m++ )
+    {
+
+        // start at around last pixel zone
+
+        pixels = getImages(maxRealMipStart - m).imageFace(maxFace);
+
+        // * stride once for stride channel texture already done
+        // * 2 for mipmap level change on x and y
+        // get x,y on previous mip
+        pixelPos = maxPixelOffset / stride;
+        x = pixelPos % width;
+        y = floor( pixelPos / width);
+
+        // compute in new mip
+        width = mipMapWidth[ maxRealMipStart - m ];
+        lastPixelOffset = ((y * 2 * width) + x * 2) * stride;
+
+        maxLum = -1;
+        maxLumNum = 0;
+        // check the Four Neighbor Only
+        // because we come from mip above
+        // which is box averaged from those 4
+        for ( k = 0; k < 2; k++ )
+        {
+            for ( p = 0; p < 2; p++ )
+            {
+                // each Mipmap, check brightest
+                const uint offset = lastPixelOffset + p * stride + k * stride * width;
+                pixel = luminance( pixels[ offset ], pixels[ offset + 1 ], pixels[ offset + 2 ] );
+
+                if ( pixel == maxLum ) {
+
+                    maxLumNum++;
+
+                } else if ( pixel > maxLum ) {
+
+                    maxLumNum = 1;
+                    maxLum = pixel;
+                    // new start where to search
+                    // on bigger mipmap
+                    maxPixelOffset = offset;
+
+                }
+            }
+        }
+
+
+        // store value at this mip
+        mipMapMaxLum[ maxRealMipStart - m ] = maxLum;
+        mipMapLumNum[ maxRealMipStart - m ] = maxLumNum;
+        mipMapMaxPixel[ maxRealMipStart - m ] = maxPixelOffset;
+
+        if ( maxLumNum > 1 ) {
+
+            // too many pixels at same Max Luminosity
+            // we revert to inferior mipmap
+            // to get a mipmap where lum max is 1 pixel
+            //(means it's area light of same pixel values)
+            break;
+
+        }
+
+        // store as last acceptable results
+        // if next one has too many bright pixel equalities
+        // ( that's why after the break above)
+        mipMapLum = maxRealMipStart - m;
+    }
+
+    // we have a winner here
+    maxPixelOffset = mipMapMaxPixel[ mipMapLum ];
+    maxLum = mipMapMaxLum[ mipMapLum ];
+    width = mipMapWidth[  mipMapLum ];
+
+    // getDirection from pixel position
+    // The greatest magnitude component, S, T or R,
+    // select the cube face.
+    // The other 2 components are used to get texel
+    pixelPos = maxPixelOffset / stride;
+    x = pixelPos % width;
+    y = floor( pixelPos / width );
+
+    Vec3f direction;
+    Vec3f colorAvg;
+
+    texelCoordToVect(maxFace, (float)x, (float)y, width, &direction[0], 1);
+
+    //Store Light info
+    // Lat, Long ? no use now but...
+    std::cout << "{ ";
+    std::cout << "  x: "  << x;
+    std::cout << ", y: "  << y;
+    std::cout << ", z: " << maxFace;
+    std::cout << ", face: " << maxFace;
+    std::cout << ", mipMapOffset: " << mipMapLum;
+    std::cout << ", maximumPixelOffset: " << maxPixelOffset;
+    std::cout << ", maximumLuminosity: " << maxLum;
+    std::cout << ", color: [" << colorAvg[0] << ", " << colorAvg[1] << ", " << colorAvg[2] << "]";
+    std::cout << ", direction: [" << direction[0] << ", " << direction[1] << ", " << direction[2] << "]";
+    std::cout << " } ";
+
+    std::cout << std::endl;
+
+#if !defined(NDEBUG)
+
+    // save image with marked samples
+
+    size_t dataSize = width;
+    dataSize =  dataSize * width;
+    dataSize =  dataSize * stride;
+
+    char* dataFaceTemp =  new char[dataSize];
+
+    ImageOutput* out = ImageOutput::create ("out/debug.tif");
+    ImageOutput::OpenMode appendmode = ImageOutput::Create;
+    for (int s = 0;  s < 6;  ++s) {
+
+        ImageSpec spec( width, width, stride, TypeDesc::UINT8);
+        out->open ("out/debug.tif", spec, appendmode);
+
+        float* dataFace = _levels[mipMapLum]._images[s];
+
+        if (s == maxFace){
+
+            memset(dataFaceTemp, 0, dataSize * sizeof(char));
+
+            pixelPos = 0;
+            for (size_t i = 0; i < width; ++i)
+            {
+                for (size_t p = 0; p < width; ++p)
+                {
+
+                    //pixelPos = (p + y*width)*stride;
+
+                    if (p == x || i == y)
+                    {
+                        dataFaceTemp[pixelPos] = 255;
+                        //dataFaceTemp[pixelPos+1] = 0;
+                        //dataFaceTemp[pixelPos+2] = 0;
+                    }
+                    else{
+                        dataFaceTemp[pixelPos] = static_cast<char>(dataFace[pixelPos] * 255);
+                        dataFaceTemp[pixelPos+1] = static_cast<char>(dataFace[pixelPos+1] * 255);
+                        dataFaceTemp[pixelPos+2] = static_cast<char>(dataFace[pixelPos+2] * 255);
+                    }
+
+                    pixelPos += stride;
+
+                }
+            }
+        }
+        else{
+            for (size_t i = 0; i < dataSize; ++i)
+            {
+                dataFaceTemp[i] = static_cast<char>(dataFace[i] * 255);
+            }
+
+        }
+
+        out->write_image (TypeDesc::FLOAT, dataFaceTemp);
+
+        // save 8bits
+        std::stringstream ss;
+        ss << "out/debug" << "_" << s << ".png";
+
+        ImageOutput* out8bit = ImageOutput::create (ss.str());
+        out8bit->open (ss.str(), spec, ImageOutput::Create);
+        out8bit->write_image (TypeDesc::UINT8, dataFaceTemp);
+        out8bit->close();
+        delete out8bit;
+        //end 9BITs
+
+        // Use AppendSubimage mode for subsequent levels
+        appendmode = ImageOutput::AppendSubimage;
+    }
+
+    out->close ();
+    delete out;
+    delete [] dataFaceTemp;
+
+#endif
+}
+
+/////////////////////////////////////////////////////////////
+// Cubemap Light Extract END
+////////////////////////////////////////////////////////////
 
 void Cubemap::MipLevel::write( const std::string& filename ) const
 {
@@ -487,8 +911,12 @@ bool Cubemap::loadMipMap(const std::string& filenamePattern)
         int strSize = snprintf( str, 511, filenamePattern.c_str(), i );
         str[strSize+1] = 0;
         std::string filename = std::string( str );
-        if ( fileExist(filename) )
-             filenames.push_back( filename );
+        std::cout << filename << std::endl;
+
+        if ( fileExist(filename) ){
+            filenames.push_back( filename );
+        }
+
     }
 
     uint nbMipLevel = filenames.size();
@@ -838,7 +1266,7 @@ Vec3f Cubemap::averageEnvMap( const Vec3f& R, const uint numSamples ) const {
 
 
 
-void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, int fixup) {
+void texelCoordToVect(int face, float ui, float vi, uint size, float* dirResult, int fixup) {
 
     float u,v;
 
@@ -881,7 +1309,7 @@ void texelCoordToVect(int face, float ui, float vi, int size, float* dirResult, 
 // s   =   ( sc/|ma| + 1 ) / 2
 // t   =   ( tc/|ma| + 1 ) / 2
 
-void vectToTexelCoord(const Vec3f& direction, int size, int& faceIndex, float& u, float& v) {
+void vectToTexelCoord(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v) {
 
     int bestAxis = 0;
     if ( fabs(direction[1]) > fabs(direction[0]) ) {

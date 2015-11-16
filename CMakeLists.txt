@@ -65,6 +65,13 @@ install(TARGETS cubemapPacker
   RUNTIME DESTINATION bin
 )
 
+add_executable(extractLight extractLight.cpp Cubemap.cpp)
+target_link_libraries(extractLight ${TBB_LIBRARIES} ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+
+install(TARGETS extractLight
+  RUNTIME DESTINATION bin
+)
+
 
 add_executable(envPrefilter envPrefilter.cpp Cubemap.cpp)
 target_link_libraries(envPrefilter ${TBB_LIBRARIES} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )

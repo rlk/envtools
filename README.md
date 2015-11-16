@@ -5,6 +5,14 @@ Copyright &copy; 2012&ndash;2013 &mdash; [Robert Kooima](http://kooima.net)
 Copyright &copy; 2014&ndash;2015 &mdash; [Cedric Pinson](http://cedricpinson.com)
 
 
+## All in One Command line
+Current set of tools can be used from the python global launch script:
+```sh
+./process_environment.py --fixedge --write-by-channel my.hdr out
+```
+Will give out a out directolry filled with whatever possible env map data formatted for pbr
+
+
 A set of tools to manipulate environment for Physical Based Rendering
 
 ## Spherical Remapping

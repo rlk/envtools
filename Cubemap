@@ -49,7 +49,6 @@ struct Cubemap {
 
     std::vector<MipLevel> _levels;
 
-
     Cubemap* _normalizeSolidAngle;
 
     Cubemap();
@@ -69,6 +68,11 @@ struct Cubemap {
     float texelCoordSolidAngle( uint faceIndex, float u, float v) const;
 
     Cubemap* shFilterCubeMap(bool useSolidAngleWeighting, int fixupType, int outputCubemapSize = 256 );
+
+    void ExtractDominantLight(double SHr[], double SHg[],  double SHb[], const int numSHCoeff);
+
+    float computeImageMax ( const float * const pixels, const int stride, const uint size);
+    void  computeMainLightDirection();
 
     void fixupCubeEdges( const std::string& output, int level);
     void computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint numSamples, bool fixup );

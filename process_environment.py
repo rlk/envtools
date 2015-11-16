@@ -9,14 +9,14 @@ import argparse
 
 DEBUG = False
 
-envIrradiance_cmd = "envIrradiance"
-envPrefilter_cmd = "envPrefilter"
-envIntegrateBRDF_cmd = "envBRDF"
-cubemap_packer_cmd = "cubemapPacker"
-panorama_packer_cmd = "panoramaPacker"
-envremap_cmd = "envremap"
-samplesGGX_cmd = "samplesGGX"
-envBackground_cmd = "envBackground"
+envIrradiance_cmd = "./envIrradiance"
+envPrefilter_cmd = "./envPrefilter"
+envIntegrateBRDF_cmd = "./envBRDF"
+cubemap_packer_cmd = "./cubemapPacker"
+panorama_packer_cmd = "./panoramaPacker"
+envremap_cmd = "./envremap"
+samplesGGX_cmd = "./samplesGGX"
+envBackground_cmd = "./envBackground"
 compress_7Zip_cmd = "7z"
 
 python_dirname = os.path.dirname(os.path.realpath(__file__))
