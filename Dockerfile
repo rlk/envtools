@@ -40,8 +40,9 @@ RUN cd /root/ && wget "https://github.com/OpenImageIO/oiio/archive/Release-1.5.1
 && cd ../.. && rm -fr oiio-Release-1.5.16 && rm -fr Release-1.5.16.tar.gz
 
 # envtools
+#RUN rm -Rf /root/envtools
 RUN mkdir /root/envtools
-COPY ./envtools /root/envtools/
+COPY ./ /root/envtools/
 
 #RUN cd /root/ && git clone https://github.com/cedricpinson/envtools envtools && mkdir envtools/release && cd /root/envtools/release && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="ccache" -DCMAKE_CXX_COMPILER_ARG1="g++" ../
 RUN mkdir /root/envtools/release && cd /root/envtools/release && cmake -DCMAKE_BUILD_TYPE=Release ../ && make -j6 install
