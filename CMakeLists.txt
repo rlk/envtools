@@ -89,6 +89,7 @@ install(TARGETS samplesGGX
 )
 
 add_executable(envBRDF envBRDF.cpp)
+target_link_libraries(envBRDF ${TBB_LIBRARIES} )
 
 install(TARGETS envBRDF
   RUNTIME DESTINATION bin

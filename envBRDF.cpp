@@ -4,12 +4,14 @@
 #include <cstdlib>
 #include <cstdio>
 #include <getopt.h>
+#include <tbb/parallel_for.h>
 
 #include "Math"
 
 typedef unsigned char ubyte;
 typedef unsigned int uint;
 
+static Vec3f* cacheImportanceSampleGGX = 0;
 
 inline void convertVec2ToUintsetRGB(ubyte* ptr, const Vec2f& val)
 {
@@ -49,29 +51,24 @@ inline void convertVec2ToUintsetRGB(ubyte* ptr, const Vec2f& val)
 
 }
 
-
-struct RougnessNoVLUT {
-
-    int _size;
+struct Worker {
+    uint _size;
+    uint _numSamples;
     Vec2f* _lut;
-    double _maxValue;
-    uint _nbSamples;
+    float* _dataFace;
 
-    RougnessNoVLUT( int size, uint samples = 1024 ) {
-        _size = size;
-        _lut = new Vec2f[size*size];
-        _maxValue = 0.0;
-        _nbSamples = samples;
+    Worker(uint numSamples, uint size, Vec2f* lut): _numSamples(numSamples),_size(size), _lut(lut)
+    {
     }
 
     // w is either Ln or Vn
-    float G1_Schlick( float ndw, float k ) {
+    float G1_Schlick( float ndw, float k ) const {
         // One generic factor of the geometry function divided by ndw
         // NB : We should have k > 0
         return 1.0 / ( ndw*(1.0-k) + k );
     }
 
-    float G_Schlick( float ndv,float ndl,float k) {
+    float G_Schlick( float ndv,float ndl,float k) const {
         // Schlick with Smith-like choice of k
         // cf http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf p3
         float G1_ndl = G1_Schlick(ndl,k);
@@ -79,12 +76,10 @@ struct RougnessNoVLUT {
         return ndv * ndl * G1_ndl * G1_ndv;
     }
 
-
-
     // http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
     // page 7
     // this is the integrate function used to build the LUT
-    Vec2f integrateBRDF( float roughnessLinear, float NoV, const int numSamples ) {
+    Vec2f integrateBRDF( float roughnessLinear, float NoV, const int numSamples, uint roughnessIndex ) const {
 
         Vec3f V;
         V[0] = sqrt( 1.0 - NoV * NoV ); // sin V.y = 0;
@@ -107,14 +102,17 @@ struct RougnessNoVLUT {
         float m = roughness;
         float k = m * 0.5;
 
+        const Vec3f* cacheLineSampleGGX = &cacheImportanceSampleGGX[ roughnessIndex*numSamples ];
+        Vec3f H, L;
         for( int i = 0; i < numSamples; i++ ) {
 
             // sample in local space
-            Vec3f H = importanceSampleGGX( i, numSamples, roughnessLinear);
+            //Vec3f H = importanceSampleGGX( i, numSamples, roughnessLinear);
+            const Vec3f& localH = cacheLineSampleGGX[i];
             // sample in worldspace
-            H =  TangentX * H[0] + TangentY * H[1] + N * H[2];
+            H =  TangentX * localH[0] + TangentY * localH[1] + N * localH[2];
 
-            Vec3f L =  H * ( dot( V, H ) * 2.0 ) - V;
+            L =  H * ( dot( V, H ) * 2.0 ) - V;
 
             float NoL = saturate( L[2] );
             float NoH = saturate( H[2] );
@@ -135,26 +133,20 @@ struct RougnessNoVLUT {
         return Vec2f( clampTo(A,0.0,1.0) , clampTo(B,0.0,1.0) );
     }
 
-
-    // LUT generation main entry point
-    // from http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
-    void processRoughnessNoVLut( const std::string& filename) {
+    void operator()(const tbb::blocked_range<uint>& r) const {
 
         float step = 1.0/float(_size);
 
-        uint numSamples = pow(2, uint(floor(log2(_nbSamples) )));
+        for ( uint y = r.begin(); y != r.end(); ++y ) {
 
-        // const uint numSamples2 = 1024*32;
-        // double maxError = -1.0;
+            float roughnessLinear = step * ( y + 0.5 );
 
-        #pragma omp parallel
-        #pragma omp for
+            for ( uint x = 0; x < _size; x++ ) {
 
-        for ( int j = 0 ; j < _size; j++) {
-            float roughnessLinear = step * ( j + 0.5 );
-            for ( int i = 0 ; i < _size; i++) {
-                float NoV = step * (i + 0.5);
-                Vec2f values = integrateBRDF( roughnessLinear, NoV, numSamples);
+                float NoV = step * (x + 0.5);
+
+                Vec2f values = integrateBRDF( roughnessLinear, NoV, _numSamples, y );
+
 #if 0
                 // Vec2d values2 = integrateBRDF( roughness, NoV, numSamples2);
 
@@ -166,18 +158,80 @@ struct RougnessNoVLUT {
                 maxError = std::max( diff1, maxError);
                 maxError = std::max( diff0, maxError);
 #endif
-                _lut[ j + i*_size ] = values;
+                _lut[ x + y*_size ] = values;
+            }
+
+        }
+    }
+
+};
+
+
+struct WorkerPrepareCache {
+
+    uint _size;
+    uint _numSamples;
+
+    WorkerPrepareCache(uint numSamples, uint size): _numSamples(numSamples), _size( size) {}
+
+    void operator()(const tbb::blocked_range<uint>& r) const {
+
+        float step = 1.0/float(_size);
+
+        for ( uint y = r.begin(); y != r.end(); ++y ) {
+
+            float roughnessLinear = step * ( y + 0.5 );
+            uint cacheLineIndex = y;
+
+            for ( uint i = 0; i < _numSamples; i++ ) {
+                cacheImportanceSampleGGX[ cacheLineIndex*_numSamples + i] = importanceSampleGGX(i, _numSamples, roughnessLinear );
             }
         }
-//        std::cout <<"max error " << maxError << std::endl;
+    }
+
+};
+
+struct RougnessNoVLUT {
+
+    int _size;
+    Vec2f* _lut;
+    double _maxValue;
+    uint _nbSamples;
+
+    RougnessNoVLUT( int size, uint samples = 1024 ) {
+        _size = size;
+        _lut = new Vec2f[size*size];
+        _maxValue = 0.0;
+        _nbSamples = samples;
+    }
+
+    void prepareCacheGGX( uint numSamples, uint size) {
+        cacheImportanceSampleGGX = new Vec3f[numSamples * size];
+        parallel_for(tbb::blocked_range<uint>(0, _size), WorkerPrepareCache(numSamples, size) );
+    }
+
+// LUT generation main entry point
+    // from http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
+    void processRoughnessNoVLut( const std::string& filename) {
+
+
+        float step = 1.0/float(_size);
+
+        uint numSamples = pow(2, uint(floor(log2(_nbSamples) )));
+
+        prepareCacheGGX(numSamples, _size);
+
+        parallel_for(tbb::blocked_range<uint>(0, _size), Worker(numSamples, _size, _lut) );
+
         writeImage(filename.c_str(), _size, _size, _lut );
     }
 
     int writeImage(const char* filename, int width, int height, Vec2f *buffer)
     {
         ubyte* data = new ubyte[width*height*4];
-        for ( int i = 0; i < width*height; i++ )
+        for ( int i = 0; i < width*height; i++ ) {
             convertVec2ToUintsetRGB( data + i*4, buffer[i] );
+        }
 
         FILE* file = fopen(filename,"wb");
         fwrite(data, width*height*4, 1 , file );

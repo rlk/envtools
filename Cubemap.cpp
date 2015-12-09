@@ -535,7 +535,8 @@ void Cubemap::computePrefilteredEnvironmentUE4( const std::string& output, int s
         // frostbite, lagarde paper p67
         // http://www.frostbite.com/wp-content/uploads/2014/11/course_notes_moving_frostbite_to_pbr.pdf
         float r = step * i;
-        float roughnessLinear = r; //pow(r,1.5);
+        //float roughnessLinear = r;
+        float roughnessLinear = r * r;
 
         int size = pow(2, totalMipmap-i );
         cubemap.init( size );

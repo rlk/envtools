@@ -958,33 +958,8 @@ inline typename T::value_type dot( const T& a, const T& b ) {
 template<typename T>
 inline T saturate(T v) { return v<0.0?0.0:v>1.0?1.0:v; }
 
-
-static Vec3f cacheImportanceSampleGGX[MAX_SAMPLES_CACHE];
-static float cacheImportanceSampleRoughness = -1.0;
-
-inline const Vec3f& importanceSampleGGX( unsigned int i, unsigned int numSamples, float roughnessLinear )
+inline Vec3f importanceSampleGGX( unsigned int i, unsigned int numSamples, float roughnessLinear )
 {
-#if 1
-    if ( cacheImportanceSampleRoughness != roughnessLinear ) {
-
-        for ( unsigned int a = 0; a < numSamples; a++ ) {
-            Vec2f Xi = hammersley( a, numSamples );
-
-            float roughness = roughnessLinear * roughnessLinear;
-            float Phi = 2.0 * PI * Xi[0];
-            float CosTheta = sqrt( (1.0 - Xi[1]) / ( 1.0 + ( roughness * roughness - 1.0) * Xi[1] ) );
-            float SinTheta = sqrt( 1.0 - CosTheta * CosTheta );
-            Vec3f H;
-            H[0] = SinTheta * cos( Phi );
-            H[1] = SinTheta * sin( Phi );
-            H[2] = CosTheta;
-            H.normalize();
-
-            cacheImportanceSampleGGX[a] = H;
-        }
-        cacheImportanceSampleRoughness = roughnessLinear;
-    }
-#else
     Vec2f Xi = hammersley( i, numSamples );
 
     float roughness = roughnessLinear * roughnessLinear;
@@ -996,9 +971,7 @@ inline const Vec3f& importanceSampleGGX( unsigned int i, unsigned int numSamples
     H[1] = SinTheta * sin( Phi );
     H[2] = CosTheta;
     H.normalize();
-    cacheImportanceSampleGGX[i] = H;
-#endif
-    return cacheImportanceSampleGGX[i];
+    return H;
 }
 
 inline float D_GGX( float NdotH, float alpha)

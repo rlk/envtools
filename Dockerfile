@@ -25,8 +25,6 @@ RUN apt-get -y update --fix-missing && apt-get install -y \
 RUN echo "/usr/local/lib64/" >/etc/ld.so.conf.d/lib64.conf
 RUN echo "/usr/local/lib/" >/etc/ld.so.conf.d/lib.conf
 
-ENV LD_LIBRARY_PATH /usr/local/lib/:/usr/local/lib64/
-
 RUN wget http://download.savannah.nongnu.org/releases/openexr/ilmbase-2.2.0.tar.gz
 RUN tar xvfz ilmbase-2.2.0.tar.gz && cd ilmbase-2.2.0 && ./configure && make -j6 install
 
@@ -45,6 +43,8 @@ RUN mkdir /root/envtools
 COPY ./ /root/envtools/
 
 #RUN cd /root/ && git clone https://github.com/cedricpinson/envtools envtools && mkdir envtools/release && cd /root/envtools/release && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="ccache" -DCMAKE_CXX_COMPILER_ARG1="g++" ../
-RUN mkdir /root/envtools/release && cd /root/envtools/release && cmake -DCMAKE_BUILD_TYPE=Release ../ && make -j6 install
+#RUN mkdir /root/envtools/release && cd /root/envtools/release && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="/usr/bin/clang++" ../ && make -j6 install
 
-#RUN rm -r /root/envtools ilmbase-2.2.0.tar.gz ilmbase-2.2.0 openexr-2.2.0.tar.gz openexr-2.2.0
+RUN mkdir /root/envtools/release && cd /root/envtools/release && cmake -DCMAKE_BUILD_TYPE=Release  ../ && make -j6 install
+
+# RUN rm -r /root/envtools ilmbase-2.2.0.tar.gz ilmbase-2.2.0 openexr-2.2.0.tar.gz openexr-2.2.0
