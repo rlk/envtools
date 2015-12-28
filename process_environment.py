@@ -87,6 +87,7 @@ class ProcessEnvironment(object):
         self.nb_samples = kwargs.get("nb_samples", "1024")
         self.background_samples = kwargs.get("background_samples", "1024")
         self.prefilter_stop_size = kwargs.get("prefilter_stop_size", 8)
+
         self.thumbnail_size = kwargs.get("thumbnail_size", 256)
         self.fixedge = kwargs.get("fixedge", False)
         self.write_by_channel = kwargs.get("write_by_channel", False)
@@ -95,18 +96,22 @@ class ProcessEnvironment(object):
         self.specular_size = kwargs.get("specular_size", 512)
         self.specular_file_base = "specular"
 
+        self.prefilter_list = [self.specular_size]
+
         self.brdf_file = "brdf_ue4.bin"
         self.brdf_nb_samples = 4096
 
         self.background_size = kwargs.get("background_size", 256)
         self.background_blur = kwargs.get("background_blur", 0.1)
         self.background_file_base = "background"
+        self.background_list = [(self.background_size, self.background_blur)]
 
         self.mipmap_file_base = "mipmap_cubemap"
         self.mipmap_size = 1024
         self.mipmap_filename = None
-
         self.can_comppress = True if which(compress_7Zip_cmd) != None else False
+
+        self.export_mipmap_cubemap = True
 
         self.config = {'textures': []}
         self.config['writeByChannel'] = self.write_by_channel
@@ -445,10 +450,13 @@ class ProcessEnvironment(object):
             print "force computation on cpu"
 
         # generate background
-        self.background_create(self.background_size, self.background_blur)
+        for size, blur in self.background_list:
+            self.background_create(size, blur)
 
         # generate prefilter ue4 specular
-        self.specular_create_prefilter(self.specular_size, self.prefilter_stop_size)
+        prefilter_stop_size = self.prefilter_stop_size  # typically do not use cubemap size < 8
+        for size in self.prefilter_list:
+            self.specular_create_prefilter(size, prefilter_stop_size)
 
         # generate irradiance*PI panorama/cubemap/sph
         self.compute_irradiance()
@@ -457,7 +465,8 @@ class ProcessEnvironment(object):
         self.compute_brdf_lut_ue4()
 
         # register mipspecular
-        self.register_mipmap_cubemap()
+        if self.export_mipmap_cubemap:
+            self.register_mipmap_cubemap()
 
         if self.can_comppress:
             self.compress()
@@ -468,7 +477,7 @@ class ProcessEnvironment(object):
         print ("processed in {} seconds".format(time.time() - start))
 
 
-if __name__ == "__main__":
+def define_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("file", help="hdr environment [ .hdr .tif .exr ]")
     parser.add_argument("output", help="output directory")
@@ -490,8 +499,10 @@ if __name__ == "__main__":
                         help="how to blur the background, it uses the same code of prefiltering", default=0.1)
     parser.add_argument("--fixedge", action="store_true", help="fix edge for cubemap")
     parser.add_argument("--pretty", action="store_true", help="generate a config file pretty for human")
+    return parser
 
-    args = parser.parse_args()
+
+def create_process_instance(args):
     input_file = args.file
     output_directory = args.output
 
@@ -509,4 +520,9 @@ if __name__ == "__main__":
                                  fixedge=args.fixedge,
                                  pretty=args.pretty,
                                  force_cpu=args.force_cpu)
-    process.run()
+    return process
+
+
+if __name__ == "__main__":
+    args = define_arguments().parse_args()
+    create_process_instance(args).run()
