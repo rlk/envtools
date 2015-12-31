@@ -99,14 +99,21 @@ public:
     std::string _input;
     std::string _outputDirectory;
 
+    bool _rgbm, _rgbe, _float, _luv;
+
     int _maxLevel;
 
     Packer(const std::string& input, int level, const std::string& outputDirectory ) {
         _input = input;
         _maxLevel = level;
         _outputDirectory = outputDirectory;
-    }
 
+        _rgbe = _float = _rgbm = _luv = false;
+    }
+    void setRGBE( bool state ) { _rgbe = state; }
+    void setRGBM( bool state ) { _rgbm = state; }
+    void setFloat( bool state ) { _float = state; }
+    void setLUV( bool state ) { _luv = state; }
     bool processCubemap( uint size, const std::string& name ) {
 
         Cubemap cm;
@@ -177,10 +184,6 @@ public:
                 iteratorSrc.pos( iteratorDstRGBE.x(), iteratorDstRGBE.y(), iteratorDstRGBE.z());
 
                 float* inRaw = (float*)iteratorSrc.rawptr();
-                uint8_t* outRGBE = (uint8_t*)iteratorDstRGBE.rawptr();
-                uint8_t* outRGBM = (uint8_t*)iteratorDstRGBM.rawptr();
-                uint8_t* outLUV = (uint8_t*)iteratorDstLUV.rawptr();
-                float* outFloat = (float*)iteratorDstFloat.rawptr();
 
                 // we assume to have at least 3 channel in inputs, but it could be greyscale
                 if ( specIn.nchannels < 3 ) {
@@ -192,13 +195,27 @@ public:
                     in = inRaw;
                 }
 
-                encodeRGBE(in, outRGBE );
-                encodeLUV(in, outLUV );
-                encodeRGBM(in, outRGBM );
+                if ( _rgbe ) {
+                    uint8_t* outRGBE = (uint8_t*)iteratorDstRGBE.rawptr();
+                    encodeRGBE(in, outRGBE );
+                }
 
-                outFloat[0] = in[0];
-                outFloat[1] = in[1];
-                outFloat[2] = in[2];
+                if ( _rgbm ) {
+                    uint8_t* outRGBM = (uint8_t*)iteratorDstRGBM.rawptr();
+                    encodeRGBM(in, outRGBM );
+                }
+
+                if ( _luv ) {
+                    uint8_t* outLUV = (uint8_t*)iteratorDstLUV.rawptr();
+                    encodeLUV(in, outLUV );
+                }
+
+                if ( _float ) {
+                    float* outFloat = (float*)iteratorDstFloat.rawptr();
+                    outFloat[0] = in[0];
+                    outFloat[1] = in[1];
+                    outFloat[2] = in[2];
+                }
 
             }
         }
@@ -234,28 +251,36 @@ public:
 
         }
 
-        FILE* outputRGBE = fopen( (_outputDirectory + "_rgbe.bin").c_str(), "wb");
-        for ( int i = 0; i < _keys.size(); i++ ) {
-            int key = _keys[i];
-            _cubemapsRGBE[key].pack(outputRGBE);
+        if ( _rgbe ) {
+            FILE* outputRGBE = fopen( (_outputDirectory + "_rgbe.bin").c_str(), "wb");
+            for ( int i = 0; i < _keys.size(); i++ ) {
+                int key = _keys[i];
+                _cubemapsRGBE[key].pack(outputRGBE);
+            }
         }
 
-        FILE* outputRGBM = fopen( (_outputDirectory + "_rgbm.bin").c_str(), "wb");
-        for ( int i = 0; i < _keys.size(); i++ ) {
-            int key = _keys[i];
-            _cubemapsRGBM[key].pack(outputRGBM);
+        if ( _rgbm ) {
+            FILE* outputRGBM = fopen( (_outputDirectory + "_rgbm.bin").c_str(), "wb");
+            for ( int i = 0; i < _keys.size(); i++ ) {
+                int key = _keys[i];
+                _cubemapsRGBM[key].pack(outputRGBM);
+            }
         }
 
-        FILE* outputLUV = fopen( (_outputDirectory + "_luv.bin").c_str(), "wb");
-        for ( int i = 0; i < _keys.size(); i++ ) {
-            int key = _keys[i];
-            _cubemapsLUV[key].pack(outputLUV);
+        if ( _luv ) {
+            FILE* outputLUV = fopen( (_outputDirectory + "_luv.bin").c_str(), "wb");
+            for ( int i = 0; i < _keys.size(); i++ ) {
+                int key = _keys[i];
+                _cubemapsLUV[key].pack(outputLUV);
+            }
         }
 
-        FILE* outputFloat = fopen( (_outputDirectory + "_float.bin").c_str() , "wb");
-        for ( int i = 0; i < _keys.size(); i++ ) {
-            int key = _keys[i];
-            _cubemapsFloat[key].pack(outputFloat);
+        if ( _float ) {
+            FILE* outputFloat = fopen( (_outputDirectory + "_float.bin").c_str() , "wb");
+            for ( int i = 0; i < _keys.size(); i++ ) {
+                int key = _keys[i];
+                _cubemapsFloat[key].pack(outputFloat);
+            }
         }
     }
 
@@ -263,8 +288,8 @@ public:
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-c write by channel] [-p toogle pattern] [-n nb level] input.tif outputdirectory" << std::endl;
-    std::cerr << "eg: " << name << " -p -n 5 input_%d.tif /tmp/test/" << std::endl;
+    std::cerr << "Usage: " << name << " [-c write by channel] [-e encodingFlags] [-p toogle pattern] [-n nb level] input.tif outputdirectory" << std::endl;
+    std::cerr << "eg: " << name << " -e luv:rgbm:rgbe:float -p -n 5 input_%d.tif /tmp/test/" << std::endl;
     std::cerr << "eg: " << name << "input.tif /tmp/test/" << std::endl;
     return 1;
 }
@@ -275,9 +300,12 @@ int main(int argc, char** argv) {
     int nb = 0;
     int c;
     writeByChannel = false;
-    while ((c = getopt(argc, argv, "cpn:")) != -1)
+    std::string colorencoding = "luv:rgbm:rgbe:float";
+
+    while ((c = getopt(argc, argv, "ce:pn:")) != -1)
         switch (c)
         {
+        case 'e': colorencoding = std::string(optarg);     break;
         case 'c': writeByChannel = true;     break;
         case 'p': pattern = true;     break;
         case 'n': nb = atoi(optarg);  break;
@@ -294,6 +322,14 @@ int main(int argc, char** argv) {
         output = std::string( argv[optind+1] );
 
         Packer packer( input, nb,  output );
+        if ( colorencoding.find("luv" ) != std::string::npos )
+            packer.setLUV( true );
+        if ( colorencoding.find("rgbe" ) != std::string::npos )
+            packer.setRGBE( true );
+        if ( colorencoding.find("rgbm" ) != std::string::npos )
+            packer.setRGBM( true );
+        if ( colorencoding.find("float" ) != std::string::npos )
+            packer.setFloat( true );
         packer.pack();
 
     } else {

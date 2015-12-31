@@ -87,9 +87,11 @@ public:
     PanoramaRGBA8 _RGBM;
     PanoramaRGBA8 _RGBE;
     PanoramaRGBA8 _LUV;
-    PanoramaRGB32 _float;
+    PanoramaRGB32 _FLOAT;
     std::string _filePattern;
     std::string _outputDirectory;
+
+    bool _rgbm, _rgbe, _float, _luv;
 
     int _maxLevel;
 
@@ -97,15 +99,21 @@ public:
         _filePattern = filenamePattern;
         _maxLevel = level;
         _outputDirectory = outputDirectory;
+        _rgbe = _float = _rgbm = _luv = false;
     }
+
+    void setRGBE( bool state ) { _rgbe = state; }
+    void setRGBM( bool state ) { _rgbm = state; }
+    void setFloat( bool state ) { _float = state; }
+    void setLUV( bool state ) { _luv = state; }
 
     ImageBuf* mipmap() {
 
         int size = int( pow(2,_maxLevel) );
 
         ImageSpec specMip( size, size, 3, TypeDesc::FLOAT );
-        _float.init( size );
-        float* data = _float._image;
+        _FLOAT.init( size );
+        float* data = _FLOAT._image;
         ImageBuf* imageMip = new ImageBuf( specMip , data );
 
         uint offset = size/2;
@@ -178,10 +186,10 @@ public:
             offset = offset / 2;
         }
 
-
-        _float.pack(_outputDirectory + "_float.bin");
-
-        imageMip->write("/tmp/debug_panorama_prefilter.tif");
+        if ( _float ) {
+            _FLOAT.pack(_outputDirectory + "_float.bin");
+            //imageMip->write("/tmp/debug_panorama_prefilter.tif");
+        }
 
         return imageMip;
     }
@@ -224,15 +232,25 @@ public:
             iteratorSrc.pos( iteratorDstRGBE.x(), iteratorDstRGBE.y(), iteratorDstRGBE.z());
 
             float* inRaw = (float*)iteratorSrc.rawptr();
-            uint8_t* outRGBE = (uint8_t*)iteratorDstRGBE.rawptr();
-            uint8_t* outRGBM = (uint8_t*)iteratorDstRGBM.rawptr();
-            uint8_t* outLUV = (uint8_t*)iteratorDstLUV.rawptr();
 
             // we assume to have at least 3 channel in inputs, but it could be greyscale
             in = inRaw;
 
-            encodeRGBE(in, outRGBE );
-            encodeLUV(in, outLUV );
+            if ( _rgbe ) {
+                uint8_t* outRGBE = (uint8_t*)iteratorDstRGBE.rawptr();
+                encodeRGBE(in, outRGBE );
+            }
+
+            if ( _rgbm ) {
+                uint8_t* outRGBM = (uint8_t*)iteratorDstRGBM.rawptr();
+                encodeRGBM(in, outRGBM );
+            }
+
+            if ( _luv ) {
+                uint8_t* outLUV = (uint8_t*)iteratorDstLUV.rawptr();
+                encodeLUV(in, outLUV );
+            }
+
 #if 0
             if ( in[0] != 0 && in[1] != 0 && in[2] != 0) {
                 decodeLUV(outLUV, inTmp);
@@ -253,13 +271,17 @@ public:
 
             }
 #endif
-            encodeRGBM(in, outRGBM );
 
         }
 
-        _RGBE.pack( _outputDirectory + "_rgbe.bin" );
-        _LUV.pack( _outputDirectory + "_luv.bin" );
-        _RGBM.pack( _outputDirectory + "_rgbm.bin" );
+        if ( _rgbe )
+            _RGBE.pack( _outputDirectory + "_rgbe.bin" );
+
+        if ( _luv )
+            _LUV.pack( _outputDirectory + "_luv.bin" );
+
+        if ( _rgbm )
+            _RGBM.pack( _outputDirectory + "_rgbm.bin" );
 
     }
 
@@ -268,8 +290,8 @@ public:
 
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-c write by channel] level inputPattern output" << std::endl;
-    std::cerr << "eg: " << name << " 5 input_%d.tif /tmp/test/" << std::endl;
+    std::cerr << "Usage: " << name << " [-e encodingFlags] [-c write by channel] level inputPattern output" << std::endl;
+    std::cerr << "eg: " << name << " -e luv:rgbm:rgbe:float 5 input_%d.tif /tmp/test/" << std::endl;
     return 1;
 }
 
@@ -279,9 +301,12 @@ int main(int argc, char** argv) {
     int level = 0;
     int c;
     writeByChannel = false;
-    while ((c = getopt(argc, argv, "c")) != -1)
+    std::string colorencoding = "luv:rgbm:rgbe:float";
+
+    while ((c = getopt(argc, argv, "ce:")) != -1)
         switch (c)
         {
+        case 'e': colorencoding = std::string(optarg);     break;
         case 'c': writeByChannel = true;     break;
 
         default: return usage(argv[0]);
@@ -301,5 +326,16 @@ int main(int argc, char** argv) {
     }
 
     Packer packer( filePattern, level,  outputDir );
+
+    if ( colorencoding.find("luv" ) != std::string::npos )
+        packer.setLUV( true );
+    if ( colorencoding.find("rgbe" ) != std::string::npos )
+        packer.setRGBE( true );
+    if ( colorencoding.find("rgbm" ) != std::string::npos )
+        packer.setRGBM( true );
+    if ( colorencoding.find("float" ) != std::string::npos )
+        packer.setFloat( true );
+
+
     packer.pack( packer.mipmap() );
 }

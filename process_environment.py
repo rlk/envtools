@@ -185,18 +185,20 @@ class ProcessEnvironment(object):
                 #     f.write(self.sh_coef)
                 # break
 
-    def cubemap_packer(self, pattern, max_level, output):
+    def cubemap_packer(self, pattern, max_level, encoding_string, output):
         cmd = ""
         write_by_channel = "-c" if self.write_by_channel else ""
+        encoding = "-e " + encoding_string
         if max_level > 0:
-            cmd = "{} {} -p -n {} {} {}".format(cubemap_packer_cmd, write_by_channel, max_level, pattern, output)
+            cmd = "{} {} {} -p -n {} {} {}".format(cubemap_packer_cmd, encoding, write_by_channel, max_level, pattern, output)
         else:
-            cmd = "{} {} {} {}".format(cubemap_packer_cmd, write_by_channel, pattern, output)
+            cmd = "{} {} {} {} {}".format(cubemap_packer_cmd, encoding, write_by_channel, pattern, output)
         execute_command(cmd)
 
     def panorama_packer(self, pattern, max_level, output):
         write_by_channel = "-c" if self.write_by_channel else ""
-        cmd = "{} {} {} {} {}".format(panorama_packer_cmd, write_by_channel, pattern, max_level, output)
+        encoding = "-e " + ":".join(self.encoding_type)
+        cmd = "{} {} {} {} {} {}".format(panorama_packer_cmd, encoding, write_by_channel, pattern, max_level, output)
         execute_command(cmd)
 
     def getMaxLevel(self, value):
@@ -221,17 +223,16 @@ class ProcessEnvironment(object):
         self.mipmap_pattern = "/tmp/specular_%d.tif"
         file_basename = os.path.join(self.output_directory, self.mipmap_file_base)
         self.mipmap_filename = file_basename
-        self.cubemap_packer(self.mipmap_pattern, max_level, file_basename)
 
     def register_mipmap_cubemap(self):
-        for encoding in self.encoding_type:
-            file_to_check = "{}_{}.bin".format(self.mipmap_filename, encoding)
-            if os.path.exists(file_to_check) is True:
-                self.registerImageConfig(encoding, "cubemap", "mipmap", 8, {
-                    "width": self.mipmap_size,
-                    "height": self.mipmap_size,
-                    "file": file_to_check
-                })
+        encoding = "float"
+        file_to_check = "{}_{}.bin".format(self.mipmap_filename, encoding)
+        if os.path.exists(file_to_check) is True:
+            self.registerImageConfig(encoding, "cubemap", "mipmap", 8, {
+                "width": self.mipmap_size,
+                "height": self.mipmap_size,
+                "file": file_to_check
+            })
 
     def compute_brdf_lut_ue4(self):
         # create the integrateBRDF texture
@@ -337,7 +338,7 @@ class ProcessEnvironment(object):
 
         file_basename = os.path.join(self.output_directory, "specular_cubemap_ue4_{}".format(specular_size))
         self.cubemap_packer(
-            "/tmp/prefilter_fixup_%d.tif", max_level, file_basename)
+            "/tmp/prefilter_fixup_%d.tif", max_level, ":".join(self.encoding_type), file_basename)
 
         for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
@@ -383,7 +384,7 @@ class ProcessEnvironment(object):
             self.background_file_base,
             background_size,
             background_blur))
-        self.cubemap_packer(output_filename, 0, file_basename)
+        self.cubemap_packer(output_filename, 0, ":".join(self.encoding_type), file_basename)
 
         for encoding in self.encoding_type:
             file_to_check = "{}_{}.bin".format(file_basename, encoding)
@@ -466,6 +467,7 @@ class ProcessEnvironment(object):
 
         # register mipspecular
         if self.export_mipmap_cubemap:
+            self.cubemap_packer(self.mipmap_pattern, self.getMaxLevel(self.mipmap_size), "float", self.mipmap_filename)
             self.register_mipmap_cubemap()
 
         if self.can_comppress:
