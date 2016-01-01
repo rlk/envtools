@@ -118,6 +118,8 @@ class ProcessEnvironment(object):
         self.textures = {}
         self.prefilterGPU = None
 
+        self.compression_level = 9
+
     def writeConfig(self):
         filename = os.path.join(self.output_directory, "config.json")
         output = open(filename, "w")
@@ -144,7 +146,7 @@ class ProcessEnvironment(object):
             for image in texture['images']:
                 f = image["file"]
                 size_before = os.path.getsize(f)
-                cmd = "{} a -tgzip -mx=9 -mpass=7 {}.gz {}".format(compress_7Zip_cmd, f, f)
+                cmd = "{} a -tgzip -mx={} -mpass=7 {}.gz {}".format(compress_7Zip_cmd, self.compression_level, f, f)
                 execute_command(cmd, verbose=False)
                 size_after = os.path.getsize(f + '.gz')
                 image["file"] = "{}.gz".format(f)
