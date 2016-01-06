@@ -138,7 +138,6 @@ class ProcessEnvironment(object):
             json.dump(config, output)
 
     def compress(self):
-        start_tick = time.time()
         sys.stdout.write("compressing ")
         for texture in self.config['textures']:
             if texture['type'] == 'thumbnail':
@@ -155,8 +154,7 @@ class ProcessEnvironment(object):
                 sys.stdout.write(".")
                 sys.stdout.flush()
                 os.remove(f)
-        sys.stdout.write(" : {} seconds\n".format((time.time() - start_tick)))
-        sys.stdout.flush()
+        print ""
 
     def create_sample_GGX(self):
 
@@ -432,40 +430,64 @@ class ProcessEnvironment(object):
 
         start = time.time()
 
+        start_tick = time.time()
         self.initBaseTexture()
+        print "== {} initBaseTexture ==".format( time.time() - start_tick )
+        print ""
 
         # generate thumbnail
+        start_tick = time.time()
         self.thumbnail_create(self.thumbnail_size)
+        print "== {} thumbnail_create ==".format( time.time() - start_tick )
+        print ""
 
         # create mipmap to accelerate prefiltering
         # so it needs to be done before background and specular
+        start_tick = time.time()
         self.cubemap_specular_create_mipmap(self.mipmap_size)
+        print "== {} cubemap_specular_create_mipmap ==".format( time.time() - start_tick )
+        print ""
 
         if not self.force_cpu:
             try:
+                start_tick = time.time()
                 from prefilter_opencl import Prefilter
                 print "prepare gpu prefiltering"
                 self.prefilterGPU = Prefilter(self.mipmap_pattern)
                 self.sample_file = self.create_sample_GGX()
+                print "== {} create_sample_GGX ==".format( time.time() - start_tick )
+                print ""
             except:
                 print "no opencl found fallback to cpu computation"
         else:
             print "force computation on cpu"
 
         # generate background
+        start_tick = time.time()
         for size, blur in self.background_list:
             self.background_create(size, blur)
+        print "== {} background_create ==".format( time.time() - start_tick )
+        print ""
 
         # generate prefilter ue4 specular
+        start_tick = time.time()
         prefilter_stop_size = self.prefilter_stop_size  # typically do not use cubemap size < 8
         for size in self.prefilter_list:
             self.specular_create_prefilter(size, prefilter_stop_size)
+        print "== {} specular_create_prefilter ==".format( time.time() - start_tick )
+        print ""
 
         # generate irradiance*PI panorama/cubemap/sph
+        start_tick = time.time()
         self.compute_irradiance()
+        print "== {} compute_irradiance ==".format( time.time() - start_tick )
+        print ""
 
         # precompute lut brdf
+        start_tick = time.time()
         self.compute_brdf_lut_ue4()
+        print "== {} compute_brdf_lut_ue4 ==".format( time.time() - start_tick )
+        print ""
 
         # register mipspecular
         if self.export_mipmap_cubemap:
@@ -473,7 +495,10 @@ class ProcessEnvironment(object):
             self.register_mipmap_cubemap()
 
         if self.can_comppress:
+            start_tick = time.time()
             self.compress()
+            print "== {} compress ==".format((time.time() - start_tick))
+            print ""
 
         # write config for this environment
         self.writeConfig()

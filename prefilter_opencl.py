@@ -288,8 +288,8 @@ class Prefilter:
             self.queue.finish()
 
             cubemap_result.append(h_face_result)
-            sys.stdout.write("{:5.3f}s ".format(1e-9 * (event.profile.end - event.profile.start)))
-            sys.stdout.flush()
+            # sys.stdout.write("{:5.3f}s ".format(1e-9 * (event.profile.end - event.profile.start)))
+            # sys.stdout.flush()
 
         # face_size = size * size * 4 * 4
         # print "size {}".format(size)
@@ -312,6 +312,15 @@ class Prefilter:
         d_precomputed_tap = cl.Buffer(self.ctx,
                                       cl.mem_flags.READ_WRITE,
                                       num_samples * 4 * 4)
+
+        # if 1 sample it will be a copy and vector tap will be 0,0,0
+        # and sum one
+        if num_samples == 1:
+            return {
+                'sum': 1.0,
+                'tap_vector': d_precomputed_tap
+            }
+
         h_weight = numpy.zeros((num_samples), dtype=numpy.float32)
         d_weight = cl.Buffer(self.ctx,
                              cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR,
@@ -346,6 +355,10 @@ class Prefilter:
         level = [f for f in cm_levels if f["size"] == size]
         d_cubemap_with_same_output_size = level[0]["d_cubemap"] if level else cm_levels[0]["d_cubemap"]
 
+        # no significant radius use a copy
+        if radius < 1e-5:
+            num_samples = 1
+
         filename = output_file
         sequence = self.get_background_sequence(radius, num_samples)
         print "compute background samples, sequence {} for radius {} : {} seconds".format(
@@ -355,6 +368,7 @@ class Prefilter:
 
         d_tap_vector = sequence['tap_vector']
         total_weight = sequence['sum']
+
 
         sys.stdout.write("compute average blur size {} radius {} - ".format(size, radius))
         sys.stdout.flush()
@@ -389,8 +403,8 @@ class Prefilter:
             self.queue.finish()
 
             cubemap_result.append(h_face_result)
-            sys.stdout.write("{:5.3f}s ".format(1e-9 * (event.profile.end - event.profile.start)))
-            sys.stdout.flush()
+            # sys.stdout.write("{:5.3f}s ".format(1e-9 * (event.profile.end - event.profile.start)))
+            # sys.stdout.flush()
 
         write_image_cubemap(cubemap_result, filename)
 
