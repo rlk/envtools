@@ -56,24 +56,24 @@ kernel void computeLightVector( global write_only float4* precomputedLightVector
     float4 result = { 0.0f, 0.0f, 0.0f, 0.0f};
 
     float roughness = roughnessLinear * roughnessLinear;
-    float Phi = 2.0f * PI * Xi[0];
-    float CosTheta = sqrt( (1.0f - Xi[1]) / ( 1.0f + ( roughness * roughness - 1.0f) * Xi[1] ) );
+    float Phi = 2.0f * PI * Xi.s0;
+    float CosTheta = sqrt( (1.0f - Xi.s1) / ( 1.0f + ( roughness * roughness - 1.0f) * Xi.s1 ) );
     float SinTheta = sqrt( 1.0f - CosTheta * CosTheta );
     float3 H;
-    H[0] = SinTheta * cos( Phi );
-    H[1] = SinTheta * sin( Phi );
-    H[2] = CosTheta;
+    H.s0 = SinTheta * cos( Phi );
+    H.s1 = SinTheta * sin( Phi );
+    H.s2 = CosTheta;
     H = normalize(H);
 
     float3 L =  ( dot( ViewVector, H ) * 2.0f ) * H - ViewVector;
     L = normalize(L);
 
-    float NoL = L[2];
+    float NoL = L.s2;
     if ( NoL <= 1e-5f ) return;
 
     // H[2] is NoH in local space
     // adds 1.e-5 to avoid D_GGX / 0.0
-    float NoH = H[2] + 1.e-5f;
+    float NoH = H.s2 + 1.e-5f;
 
     // data to evaluate pdf
     float VoH = NoH;
@@ -93,10 +93,10 @@ kernel void computeLightVector( global write_only float4* precomputedLightVector
     float mipLevel = max(0.5f * native_log2(omegaS / omegaP) + mipBias, 0.0f);
     // printf("omegaP %f omegaS %f div %f miplevel %f\n", omegaP, omegaS, native_log2(omegaS / omegaP), mipLevel);
 
-    result[0] = L[0];
-    result[1] = L[1];
-    result[2] = L[2];
-    result[3] = mipLevel;
+    result.s0 = L.s0;
+    result.s1 = L.s1;
+    result.s2 = L.s2;
+    result.s3 = mipLevel;
 
     uint index = atom_inc(&currentLightVectorIndex[0]);
     if ( index >= numValidSamples)
@@ -117,8 +117,8 @@ kernel void computeTapVector( global __write_only float4* tapVector,
 
     float2 Xi = hammersley( i, numSamples );
 
-    float u = Xi[0];
-    float v = Xi[1];
+    float u = Xi.s0;
+    float v = Xi.s1;
     float angle = u * PI * 2.0f;
 
     // uniform
@@ -140,10 +140,10 @@ kernel void computeTapVector( global __write_only float4* tapVector,
     float w = exp(-0.5f*(x*x + y*y)/sigmaSqr);
 
     float4 H;
-    H[0] = x;
-    H[1] = y;
-    H[2] = 1.0f;
-    H[3] = w;
+    H.s0 = x;
+    H.s1 = y;
+    H.s2 = 1.0f;
+    H.s3 = w;
     H = normalize(H);
 
     tapVector[i] = H;
@@ -164,17 +164,32 @@ kernel void computeTapVector( global __write_only float4* tapVector,
 
 static float4 vectToTexelCoord(const float4 direction) {
 
-    uint bestAxis = 0;
-    if ( fabs(direction[1]) > fabs(direction[0]) ) {
-        bestAxis = 1;
-        if ( fabs(direction[2]) > fabs(direction[1]) )
-            bestAxis = 2;
-    } else if ( fabs(direction[2]) > fabs(direction[0]) )
-        bestAxis = 2;
+    //uint bestAxis = 0;
+    uint faceIndex = 0;
+    float bestAxisValue = 0.0;
+    if ( fabs(direction.s1) > fabs(direction.s0) ) {
+        if ( fabs(direction.s2) > fabs(direction.s1) ) {
+            //bestAxis = 2;
+	    bestAxisValue = direction.s2;
+	    faceIndex = 2 * 2 + ( bestAxisValue > 0.0f ? 0 : 1 );
+        } else {
+	    //bestAxis = 1;
+	    bestAxisValue = direction.s1;
+	    faceIndex = 1 * 2 + ( bestAxisValue > 0.0f ? 0 : 1 );
+        }
+    } else if ( fabs(direction.s2) > fabs(direction.s0) ) {
+        //bestAxis = 2;
+	bestAxisValue = direction.s2;
+	faceIndex = 2 * 2 + ( bestAxisValue > 0.0f ? 0 : 1 );
+    } else {
+        //bestAxis = 0;
+	bestAxisValue = direction.s0;
+	faceIndex =  0 * 2 + ( bestAxisValue > 0.0f ? 0 : 1 );
+    }
 
     // select the index of cubemap face
-    uint faceIndex = bestAxis * 2 + ( direction[bestAxis] > 0.0f ? 0 : 1 );
-    float bestAxisValue = direction[bestAxis];
+    //uint faceIndex = bestAxis * 2 + ( direction[bestAxis] > 0.0f ? 0 : 1 );
+    //float bestAxisValue = direction[bestAxis];
     float denom = fabs( bestAxisValue );
 
     //float maInv = 1.0/denom;
@@ -316,7 +331,7 @@ kernel void computeGGX( uint face,
     float4 N = texelCoordToVect( face, (float)(i), (float)(j), size, (bool)fixup );
     float4 prefilteredColor = (float4)(0.0f, 0.0f, 0.0f, 0.0f );
 
-    float4 UpVector = fabs(N[2]) < 0.999 ? (float4)(0,0,1,0) : (float4)(1,0,0,0);
+    float4 UpVector = fabs(N.s2) < 0.999 ? (float4)(0,0,1,0) : (float4)(1,0,0,0);
     float4 TangentX = normalize( cross( UpVector, N ) );
     float4 TangentY = normalize( cross( N, TangentX ) );
 
@@ -330,10 +345,10 @@ kernel void computeGGX( uint face,
         L = precomputedLightVector[ n ];
         // printf ("dir %f %f %f\n", N[0], N[1], N[2] );
 
-        NoL = L[2];
-        lod = L[3];
+        NoL = L.s2;
+        lod = L.s3;
 
-        LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
+        LworldSpace = TangentX * L.s0 + TangentY * L.s1 + N * L.s2;
 
         //LworldSpace = N;
         // get uv, face
@@ -368,7 +383,7 @@ kernel void computeBackground( uint face,
     float4 N = texelCoordToVect( face, (float)(i), (float)(j), size, (bool)fixup );
     float4 finalColor = (float4)(0.0f, 0.0f, 0.0f, 0.0f );
 
-    float4 UpVector = fabs(N[2]) < 0.999 ? (float4)(0,0,1,0) : (float4)(1,0,0,0);
+    float4 UpVector = fabs(N.s2) < 0.999 ? (float4)(0,0,1,0) : (float4)(1,0,0,0);
     float4 TangentX = normalize( cross( UpVector, N ) );
     float4 TangentY = normalize( cross( N, TangentX ) );
 
@@ -377,13 +392,13 @@ kernel void computeBackground( uint face,
     for( uint n = 0; n < nbSamples; n++ ) {
 
         L = tapVector[ n ];
-        LworldSpace = TangentX * L[0] + TangentY * L[1] + N * L[2];
+        LworldSpace = TangentX * L.s0 + TangentY * L.s1 + N * L.s2;
 
         // get uv, face
         uv = vectToTexelCoord( LworldSpace );
 
         color = read_imagef( cubemap0, cubemapSampler, uv );
-        finalColor += color * L[3];
+        finalColor += color * L.s3;
     }
 
     finalColor = finalColor / totalWeight;
