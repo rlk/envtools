@@ -472,7 +472,7 @@ static double *sph_file(const char *name, uint16 *C)
 
 static int usage(const char *exe)
 {
-    fprintf(stderr, "Usage: %s [-n n] [-f in.tif] [-ges] out.tif n\n", exe);
+    fprintf(stderr, "Usage: %s [-n n] [-f in.tif] [-ges] out.tif\n", exe);
     return 1;
 }
 
@@ -493,7 +493,8 @@ int main(int argc, char *argv[])
             case 'e': L = sph_eucalyptus_grove  (&C); break;
             case 's': L = sph_st_peters_basilica(&C); break;
 
-            default: return usage(argv[0]);
+            default:
+                return usage(argv[0]);
         }
 
     if (L && optind < argc)
@@ -506,7 +507,9 @@ int main(int argc, char *argv[])
         }
         free(L);
     }
-    else return usage(argv[0]);
+    else {
+        return usage(argv[0]);
+    }
 
     return 0;
 }

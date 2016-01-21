@@ -163,7 +163,7 @@ int TIFFReadFloatScanline(TIFF *T, float *dst, uint32 r)
         if (len != TIFFScanlineSize(T))
         {
             len  = TIFFScanlineSize(T);
-            src  = realloc(src, len);
+            src  = (void**)realloc(src, len);
         }
 
         if (src && TIFFReadScanline(T, src, r, 0) > 0)
@@ -220,7 +220,7 @@ int TIFFWriteFloatScanline(TIFF *T, float *src, uint32 r)
         if (len != TIFFScanlineSize(T))
         {
             len  = TIFFScanlineSize(T);
-            dst  = realloc(dst, len);
+            dst  = (void**)realloc(dst, len);
         }
 
         if (dst)
@@ -361,6 +361,7 @@ static void image_writer(const char *name, image *out, int n)
             TIFFSetField(T, TIFFTAG_BITSPERSAMPLE,   out[f].b);
             TIFFSetField(T, TIFFTAG_SAMPLEFORMAT,    out[f].s);
             TIFFSetField(T, TIFFTAG_ORIENTATION,     ORIENTATION_TOPLEFT);
+            //TIFFSetField(T, TIFFTAG_ORIENTATION,     ORIENTATION_BOTLEFT);
             TIFFSetField(T, TIFFTAG_PLANARCONFIG,    PLANARCONFIG_CONTIG);
 
             if (out[f].c == 1)
