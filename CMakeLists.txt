@@ -72,6 +72,13 @@ install(TARGETS extractLight
   RUNTIME DESTINATION bin
 )
 
+add_executable(extractLights median_cut.cpp)
+target_link_libraries(extractLights ${TBB_LIBRARIES} ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
+
+install(TARGETS extractLights
+  RUNTIME DESTINATION bin
+)
+
 
 add_executable(envPrefilter envPrefilter.cpp Cubemap.cpp)
 target_link_libraries(envPrefilter ${TBB_LIBRARIES} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
