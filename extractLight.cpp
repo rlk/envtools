@@ -17,7 +17,7 @@
 static int usage(const std::string& name)
 {
     std::cerr << "Usage: " << name << " input " << std::endl;
-    std::cerr << "eg: " << name << "input_%i.tiff " << std::endl;
+    std::cerr << "eg: " << name << " input_%i.tiff " << std::endl;
 
     return 1;
 }
