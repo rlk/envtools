@@ -70,6 +70,9 @@ struct Cubemap {
 
     Cubemap* shFilterCubeMap(bool useSolidAngleWeighting, int fixupType, int outputCubemapSize = 256 );
 
+    float computeImageMaxLuminosity ( const float * const pixels, const int stride, const uint width);
+    // using hierachical max luminosity pixel to find light direction
+    void  computeMainLightDirection();
     void fixupCubeEdges( const std::string& output, int level);
     void computePrefilterCubemapAtLevel( float roughness, const Cubemap& inputCubemap, uint numSamples, bool fixup );
 
