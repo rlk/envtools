@@ -538,18 +538,21 @@ void Cubemap::computeMainLightDirection ()
     {
         // all cube face alike... take first and be off
 
-        std::cout << "{ ";
-        std::cout << "  x: "  << 0;
-        std::cout << ", y: "  << 1;
-        std::cout << ", z: " << 0;
-        std::cout << ", face: " << 0;
-        std::cout << ", mipMapOffset: " << maxRealMipStart;
-        std::cout << ", maximumPixelOffset: " << 0;
-        std::cout << ", maximumLuminosity: " << maxLum;
-        std::cout << ", color: [" << 0 << ", " << 0 << ", " << 0 << "]";
-        std::cout << ", direction: [" << 0 << ", " << -1 << ", " << 0 << "]";
-        std::cout << " } ";
-
+        std::cout << "{";
+#if !defined(NDEBUG)
+        std::cout << "  \"x\": "  << 0;
+        std::cout << ", \"y\": "  << 1;
+        std::cout << ", \"z\": " << 0;
+        std::cout << ", \"face\": " << 0;
+        std::cout << ", \"mipMapOffset\": " << maxRealMipStart;
+        std::cout << ", \"maximumPixelOffset\": " << 0;
+        std::cout << ", \"maximumLuminosity\": " << maxLum;
+#else
+        std::cout << " \"maximumLuminosity\": " << maxLum;
+#endif
+        std::cout << ", \"color\": [" << 0 << ", " << 0 << ", " << 0 << "]";
+        std::cout << ", \"direction\": [" << 0 << ", " << -1 << ", " << 0 << "]";
+        std::cout << "}";
         std::cout << std::endl;
         return;
     }
@@ -667,20 +670,29 @@ void Cubemap::computeMainLightDirection ()
     Vec3f direction;
     Vec3f colorAvg;
 
+    pixels = getImages(mipMapLum).imageFace(maxFace);
+    colorAvg[0]= pixels[maxPixelOffset];
+    colorAvg[1]= pixels[maxPixelOffset + 1];
+    colorAvg[2]= pixels[maxPixelOffset + 2];
+
     texelCoordToVect(maxFace, (float)x, (float)y, width, &direction[0], 1);
 
     //Store Light info
     // Lat, Long ? no use now but...
-    std::cout << "{ ";
-    std::cout << "  x: "  << x;
-    std::cout << ", y: "  << y;
-    std::cout << ", z: " << maxFace;
-    std::cout << ", face: " << maxFace;
-    std::cout << ", mipMapOffset: " << mipMapLum;
-    std::cout << ", maximumPixelOffset: " << maxPixelOffset;
-    std::cout << ", maximumLuminosity: " << maxLum;
-    std::cout << ", color: [" << colorAvg[0] << ", " << colorAvg[1] << ", " << colorAvg[2] << "]";
-    std::cout << ", direction: [" << direction[0] << ", " << direction[1] << ", " << direction[2] << "]";
+    std::cout << "{";
+#if !defined(NDEBUG)
+    std::cout << "  \"x\": "  << x;
+    std::cout << ", \"y\": "  << y;
+    std::cout << ", \"z\": " << maxFace;
+    std::cout << ", \"face\": " << maxFace;
+    std::cout << ", \"mipMapOffset\": " << mipMapLum;
+    std::cout << ", \"maximumPixelOffset\": " << maxPixelOffset;
+    std::cout << ", \"maximumLuminosity\": " << maxLum;
+#else
+    std::cout << " \"maximumLuminosity\": " << maxLum;
+#endif
+    std::cout << ", \"color\": [" << colorAvg[0] << ", " << colorAvg[1] << ", " << colorAvg[2] << "]";
+    std::cout << ", \"direction\": [" << direction[0] << ", " << direction[1] << ", " << direction[2] << "]";
     std::cout << " } ";
 
     std::cout << std::endl;

@@ -16,6 +16,7 @@ cubemap_packer_cmd = "cubemapPacker"
 panorama_packer_cmd = "panoramaPacker"
 envremap_cmd = "envremap"
 samplesGGX_cmd = "samplesGGX"
+extractLight_cmd = "extractLight"
 envBackground_cmd = "envBackground"
 compress_7Zip_cmd = "7z"
 
@@ -120,12 +121,17 @@ class ProcessEnvironment(object):
 
         self.compression_level = 9
 
+        self.main_light = None
+
     def writeConfig(self):
         filename = os.path.join(self.output_directory, "config.json")
         output = open(filename, "w")
 
         config = self.config
         config["diffuseSPH"] = json.loads(self.sh_coef)
+
+        if self.main_light:
+            config["mainLight"] = json.loads(self.main_light)
 
         for texture in self.config['textures']:
             for image in texture['images']:
@@ -426,6 +432,16 @@ class ProcessEnvironment(object):
 
         self.cubemap_highres = cubemap_highres
 
+    def extract_lights(self):
+        cmd = "{} {}".format(extractLight_cmd, self.mipmap_pattern)
+        output_log = execute_command(cmd, verbose=False, print_command=True)
+        lines_list = output_log.split("\n")
+        for line in lines_list:
+            index = line.find("direction")
+            if index != -1:
+                self.main_light = line
+        print output_log
+
     def run(self):
 
         start = time.time()
@@ -446,6 +462,12 @@ class ProcessEnvironment(object):
         start_tick = time.time()
         self.cubemap_specular_create_mipmap(self.mipmap_size)
         print "== {} cubemap_specular_create_mipmap ==".format( time.time() - start_tick )
+        print ""
+
+        # extract lights from environment
+        start_tick = time.time()
+        self.extract_lights()
+        print "== {} extract_lights ==".format( time.time() - start_tick )
         print ""
 
         if not self.force_cpu:
