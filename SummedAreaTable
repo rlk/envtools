@@ -1,0 +1,274 @@
+/* -*-c++-*- */
+
+#pragma once
+
+#ifndef SUMMED_AREA_TABLE_H
+#define SUMMED_AREA_TABLE_H 1
+
+
+#include "ExtractLightsVariance"
+
+/**
+ * Luminance Summed Area Table
+ * https://en.wikipedia.org/wiki/Summed_area_table
+ * Aka Integral Image (for order > 1)
+ * Accelerate Sum computation
+ * Create a luminance summed area table from an image.
+ */
+class SummedAreaTable
+{
+protected:
+
+    uint _width, _height;
+
+    // perf: could be AOS instead of SAO
+    // as usage is AOS (creation is SAO though)
+    std::vector<double> _sat;
+
+    std::vector<double> _sat1;
+    std::vector<double> _sat2;
+    std::vector<double> _sat3;
+    std::vector<double> _sat4;
+    std::vector<double> _sat5;
+
+    std::vector<double> _r;
+    std::vector<double> _g;
+    std::vector<double> _b;
+
+public:
+    double I(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat[i];
+    }
+
+    double I1(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat1[i];
+    }
+
+    double I2(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat2[i];
+    }
+
+    double I3(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat3[i];
+    }
+
+    double I4(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat4[i];
+    }
+    double I5(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat5[i];
+    }
+
+    double R(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _r[i];
+    }
+    double G(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _g[i];
+    }
+    double B(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _b[i];
+    }
+
+public:
+
+
+    void createLum(float* rgb, const uint width, const uint height, const uint nc)
+    {
+        assert(nc > 2);
+
+        _width = width;
+        _height = height;
+
+        const uint imgSize = width * height;
+
+        _sat.clear();
+        _sat.resize(imgSize);
+        _sat1.clear();
+        _sat1.resize(imgSize);
+        _sat2.clear();
+        _sat2.resize(imgSize);
+        _sat3.clear();
+        _sat3.resize(imgSize);
+        _sat4.clear();
+        _sat4.resize(imgSize);
+        _sat5.clear();
+        _sat5.resize(imgSize);
+
+        _r.clear();
+        _r.resize(imgSize);
+        _g.clear();
+        _g.resize(imgSize);
+        _b.clear();
+        _b.resize(imgSize);
+
+        _sat[0] = 0.0;
+        _sat1[0] = 0.0;
+        _sat2[0] = 0.0;
+        _sat3[0] = 0.0;
+        _sat4[0] = 0.0;
+        _sat5[0] = 0.0;
+        _r[0] = 0.0;
+        _g[0] = 0.0;
+        _b[0] = 0.0;
+
+        for (uint y = 0; y < height; ++y) {
+            for (uint x = 0; x < width;  ++x) {
+                const uint i = y*width + x;
+
+                const double r = rgb[i*nc + 0];
+                const double g = rgb[i*nc + 1];
+                const double b = rgb[i*nc + 2];
+
+                double ixy = luminance(r,g,b);
+
+                // the latitude-longitude format overrepresents the area of regions near the poles.
+                // To compensate for this, the pixels of the probe image
+                // should first be scaled by cosφ.
+                const double lat = PI2 - PI * y / height;
+                ixy *= cos(lat);
+
+                // https://en.wikipedia.org/wiki/Summed_area_table
+                _sat[i] = ixy + I(x-1, y) + I(x, y-1) - I(x-1, y-1);
+
+                _r[i]   = r   + R(x-1, y) + R(x, y-1) - R(x-1, y-1);
+                _g[i]   = g   + G(x-1, y) + G(x, y-1) - G(x-1, y-1);
+                _b[i]   = b   + B(x-1, y) + B(x, y-1) - B(x-1, y-1);
+
+            }
+        }
+
+        // integral log
+        for (uint y = 0; y < _height; ++y)
+        {
+            for (uint x = 0; x < _width;  ++x)
+            {
+                const uint i = y*width + x;
+                _sat1[i] = log(I(x, y)) + I1(x-1, y) + I1(x, y-1) - I1(x-1, y-1);
+            }
+        }
+
+        // Integral image of higher power
+        // http://vision.okstate.edu/pubs/ssiai_tp_1.pdf
+        // integral 2
+        for (uint y = 0; y < _height; ++y)
+        {
+            for (uint x = 0; x < _width;  ++x)
+            {
+                const uint i = y*width + x;
+                _sat2[i] = I(x, y)*I(x, y) + I2(x-1, y) + I2(x, y-1) - I2(x-1, y-1);
+            }
+        }
+        // integral 3
+        for (uint y = 0; y < _height; ++y) {
+            for (uint x = 0; x < _width;  ++x) {
+                const uint i = y*width + x;
+                _sat3[i] = I(x, y)*I(x, y)*I(x, y) + I3(x-1, y) + I3(x, y-1) - I3(x-1, y-1);
+            }
+        }
+        // integral 4
+        for (uint y = 0; y < _height; ++y) {
+            for (uint x = 0; x < _width;  ++x) {
+                const uint i = y*width + x;
+                _sat4[i] = I(x, y)*I(x, y)*I(x, y)*I(x, y) + I4(x-1, y) + I4(x, y-1) - I4(x-1, y-1);
+            }
+        }
+        // integral 5
+        for (uint y = 0; y < _height; ++y) {
+            for (uint x = 0; x < _width;  ++x) {
+                const uint i = y*width + x;
+                _sat5[i] = I(x, y)*I(x, y)*I(x, y)*I(x, y) + I5(x-1, y) + I5(x, y-1) - I5(x-1, y-1);
+            }
+        }
+
+    }
+    uint width() const  { return _width;  }
+    uint height() const { return _height; }
+
+    /**
+     * Returns the sum of a region defined by A,B,C,D.
+     *
+     * A----B
+     * |    |  sum = C+A-B-D
+     * D----C
+     */
+    double sum(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I(cx, cy) + I(ax, ay) - I(bx, by) - I(dx, dy);
+    }
+
+    double sumR(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return R(cx, cy) + R(ax, ay) - R(bx, by) - R(dx, dy);
+    }
+
+    double sumG(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return G(cx, cy) + G(ax, ay) - G(bx, by) - G(dx, dy);
+    }
+
+    double sumB(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return B(cx, cy) + B(ax, ay) - B(bx, by) - B(dx, dy);
+    }
+
+    double sum1(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I1(cx, cy) + I1(ax, ay) - I1(bx, by) - I1(dx, dy);
+    }
+
+    double sum2(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I2(cx, cy) + I2(ax, ay) - I2(bx, by) - I2(dx, dy);
+    }
+    double sum3(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I3(cx, cy) + I3(ax, ay) - I3(bx, by) - I3(dx, dy);
+    }
+    double sum4(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I4(cx, cy) + I4(ax, ay) - I4(bx, by) - I4(dx, dy);
+    }
+    double sum5(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I5(cx, cy) + I5(ax, ay) - I5(bx, by) - I5(dx, dy);
+    }
+
+};
+
+#endif // #ifndef SUMMED_AREA_TABLE_H
