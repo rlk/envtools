@@ -24,6 +24,9 @@ OIIO_NAMESPACE_USING
 #include "ExtractLightsVariance"
 #include "SummedAreaTable"
 #include "SummedAreaTableRegion"
+#if !defined(NDEBUG)
+#include "ExtractLightsVarianceDebug"
+#endif
 
 /**
  * Recursively split a region r and append new subregions
@@ -264,9 +267,6 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
     size_t i = 0;
     size_t lightNum = lights.size();
 
-    lightNum = 15;
-
-
     std::cout << "[";
 
     for (std::vector<light>::const_iterator l = lights.begin(); l != lights.end() && i < lightNum; ++l) {
@@ -374,6 +374,12 @@ int main(int argc, char** argv)
     // Merged Light sorted By Luminance intensity
     outputJSON(mainLights, height, width, imageAreaSize);
 
+
+#if !defined(NDEBUG)
+
+    debugDrawLight(regions, lights, mainLights, rgba, width, height, nc);
+
+#endif // !defined(NDEBUG)
 
     return 0;
 }
