@@ -72,7 +72,7 @@ install(TARGETS extractLight
   RUNTIME DESTINATION bin
 )
 
-add_executable(extractLights median_cut.cpp)
+add_executable(extractLights ExtractLightsVariance.cpp)
 target_link_libraries(extractLights ${TBB_LIBRARIES} ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS extractLights
