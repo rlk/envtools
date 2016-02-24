@@ -1,0 +1,59 @@
+/* -*-c++-*- */
+#pragma once
+
+#ifndef EXTRACT_LIGHTS_VARIANCE_H
+#define EXTRACT_LIGHTS_VARIANCE_H 1
+
+#include "Math"
+
+struct double2 {
+    double _x, _y;
+};
+
+struct double3 {
+    double _x, _y, _z;
+};
+
+struct light {
+
+    double2 _centroidPosition;
+
+    // light Area   
+    uint _w,_h;
+    uint _x,_y;
+
+    bool _merged;
+    int _mergedNum;
+
+    double _areaSize;
+    double _sum;
+
+    // average
+    double _lumAverage;
+    double _rAverage, _gAverage, _bAverage;
+
+    //value
+    double _luminancePixel;
+
+   
+    double _variance;
+    double _colorAverage;
+    double _luminanceAverage;
+
+    double _sortCriteria;
+
+    // sort facility
+    bool operator< (const light &rhs) const
+    {
+        return _sortCriteria < rhs._sortCriteria ;
+    }
+
+};
+
+
+double luminance(double r, double g, double b)
+{
+    return r*0.2125f + g*0.7154f + b*0.0721f;
+}
+
+#endif //EXTRACT_LIGHTS_VARIANCE_H

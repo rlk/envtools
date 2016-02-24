@@ -17,6 +17,7 @@ panorama_packer_cmd = "panoramaPacker"
 envremap_cmd = "envremap"
 samplesGGX_cmd = "samplesGGX"
 extractLight_cmd = "extractLight"
+extractLights_cmd = "extractLights"
 envBackground_cmd = "envBackground"
 compress_7Zip_cmd = "7z"
 
@@ -110,7 +111,7 @@ class ProcessEnvironment(object):
         self.mipmap_file_base = "mipmap_cubemap"
         self.mipmap_size = 1024
         self.mipmap_filename = None
-        self.can_comppress = True if which(compress_7Zip_cmd) != None else False
+        self.can_compress = True if which(compress_7Zip_cmd) != None else False
 
         self.export_mipmap_cubemap = True
 
@@ -122,6 +123,7 @@ class ProcessEnvironment(object):
         self.compression_level = 9
 
         self.main_light = None
+        self.lights = None
 
     def writeConfig(self):
         filename = os.path.join(self.output_directory, "config.json")
@@ -132,6 +134,9 @@ class ProcessEnvironment(object):
 
         if self.main_light:
             config["mainLight"] = json.loads(self.main_light)
+
+        if self.lights:
+            config["Lights"] = json.loads(self.lights)
 
         for texture in self.config['textures']:
             for image in texture['images']:
@@ -432,7 +437,7 @@ class ProcessEnvironment(object):
 
         self.cubemap_highres = cubemap_highres
 
-    def extract_lights(self):
+    def extract_light(self):
         cmd = "{} {}".format(extractLight_cmd, self.mipmap_pattern)
         output_log = execute_command(cmd, verbose=False, print_command=True)
         lines_list = output_log.split("\n")
@@ -441,6 +446,13 @@ class ProcessEnvironment(object):
             if index != -1:
                 self.main_light = line
         print output_log
+
+    def extract_lights(self):
+        cmd = "{} {}".format(extractLights_cmd, self.panorama_highres)
+        output_log = execute_command(cmd, verbose=False, print_command=True)
+        print output_log
+        self.lights = output_log
+
 
     def run(self):
 
@@ -465,6 +477,13 @@ class ProcessEnvironment(object):
         print ""
 
         # extract lights from environment
+        # one main light
+        start_tick = time.time()
+        self.extract_light()
+        print "== {} extract_light ==".format( time.time() - start_tick )
+        print ""
+
+        # multiple lights
         start_tick = time.time()
         self.extract_lights()
         print "== {} extract_lights ==".format( time.time() - start_tick )
@@ -516,7 +535,7 @@ class ProcessEnvironment(object):
             self.cubemap_packer(self.mipmap_pattern, self.getMaxLevel(self.mipmap_size), "float", self.mipmap_filename)
             self.register_mipmap_cubemap()
 
-        if self.can_comppress:
+        if self.can_compress:
             start_tick = time.time()
             self.compress()
             print "== {} compress ==".format((time.time() - start_tick))

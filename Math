@@ -12,9 +12,12 @@
 #include <algorithm>
 
 typedef unsigned int uint;
+typedef unsigned char uchar;
 
 #define PI 3.14159265358979
 #define PI_INV (1.0/PI)
+#define PI2 1.5707963f
+#define TAU 6.2831853f
 
 #define MAX_SAMPLES_CACHE 524288
 
