@@ -680,6 +680,7 @@ void Cubemap::computeMainLightDirection ()
         texelCoordToVect(maxFace, (float)x, (float)y, width, &direction[0], 1);
     }
     else{
+        std::cerr << "computeMainLightDirection: default Direction (Too Uniform Ligthing Cubemap)" << std::endl;
         direction[0] = 0.0f;
         direction[1] = -1.0f;
         direction[2] = 0.0f;
