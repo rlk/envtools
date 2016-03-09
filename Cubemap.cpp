@@ -675,7 +675,17 @@ void Cubemap::computeMainLightDirection ()
     colorAvg[1]= pixels[maxPixelOffset + 1];
     colorAvg[2]= pixels[maxPixelOffset + 2];
 
-    texelCoordToVect(maxFace, (float)x, (float)y, width, &direction[0], 1);
+    if (width > 1){
+        // divide by Zero with width == 1
+        texelCoordToVect(maxFace, (float)x, (float)y, width, &direction[0], 1);
+    }
+    else{
+        std::cerr << "computeMainLightDirection: default Direction (Too Uniform Ligthing Cubemap)" << std::endl;
+        direction[0] = 0.0f;
+        direction[1] = -1.0f;
+        direction[2] = 0.0f;
+    }
+
 
     //Store Light info
     // Lat, Long ? no use now but...

@@ -179,7 +179,11 @@ public:
             for (uint x = 0; x < _width;  ++x)
             {
                 const uint i = y*width + x;
-                _sat1[i] = log(I(x, y)) + I1(x-1, y) + I1(x, y-1) - I1(x-1, y-1);
+
+                double sum = I(x, y);
+                if (sum > 0) sum = log(I(x, y));
+
+                _sat1[i] = sum + I1(x-1, y) + I1(x, y-1) - I1(x-1, y-1);
             }
         }
 
