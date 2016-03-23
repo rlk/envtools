@@ -292,10 +292,10 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
             d._z *= inv;
         }
 
-        // convert to bitmap
-        const int rCol = static_cast<uchar>(static_cast<uchar>(l->_rAverage*255));
-        const int gCol = static_cast<uchar>(static_cast<uchar>(l->_gAverage*255));
-        const int bCol = static_cast<uchar>(static_cast<uchar>(l->_bAverage*255));
+        // convert to float
+        const float rCol = l->_rAverage;        
+        const float gCol = l->_gAverage;
+        const float bCol = l->_bAverage;
 
         // 1 JSON object per light
         std::cout << "{";
