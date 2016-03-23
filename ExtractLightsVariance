@@ -51,9 +51,57 @@ struct light {
 };
 
 
-double luminance(double r, double g, double b)
+static double luminance(double r, double g, double b)
 {
     return r*0.2125f + g*0.7154f + b*0.0721f;
+}
+
+// solid Angle
+static double AreaElement( const double x, const double y )
+{
+    return atan2(x * y, sqrt(x * x + y * y + 1.0));
+}
+
+// a pixel to a solidAngle
+static double texelAreaSolidAngle(const double aU, const double aV, const double aW, const double aH, const uint width, const uint height)
+{
+    // Shift from a demi texel, mean 1.0 / size  with U and V in [-1..1]
+    const double InvResolutionW = 1.0 / width;
+    const double InvResolutionH = 1.0 / height;
+
+    // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
+    // ( 0.5 is for texel center addressing)
+    const double x0 = (2.0 * (aU  + 0.5) / width ) - 1.0 - InvResolutionW;
+    const double y0 = (2.0 * (aV  + 0.5) / height ) - 1.0 + InvResolutionH;    
+    const double x1 = (2.0 * ((aU+aV)  + 0.5) / width ) - 1.0 + InvResolutionW;
+    const double y1 = (2.0 * ((aV+aH)  + 0.5) / height ) - 1.0 + InvResolutionH;    
+
+    const double SolidAngle = AreaElement(x0, y0) - AreaElement(x0, y1) - AreaElement(x1, y0) + AreaElement(x1, y1);
+
+    return SolidAngle;
+}
+
+// solid Angle: aka resolution independent results
+static double texelPixelSolidAngle(const double aU, const double aV, const uint width, const uint height) 
+{
+    // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
+    // ( 0.5 is for texel center addressing)
+    const double U = (2.0 * (aU  + 0.5) / width ) - 1.0;
+    const double V = (2.0 * (aV  + 0.5) / height ) - 1.0;
+    
+    // Shift from a demi texel, mean 1.0 / size  with U and V in [-1..1]
+    const double InvResolutionW = 1.0 / width;
+    const double InvResolutionH = 1.0 / height;
+        
+    // U and V are the -1..1 texture coordinate on the current face.
+    // Get projected area for this Texel
+    const double x0 = U - InvResolutionW;
+    const double y0 = V - InvResolutionH;
+    const double x1 = U + InvResolutionW;
+    const double y1 = V + InvResolutionH;
+    const double SolidAngle = AreaElement(x0, y0) - AreaElement(x0, y1) - AreaElement(x1, y0)  + AreaElement(x1, y1);
+
+    return SolidAngle;
 }
 
 #endif //EXTRACT_LIGHTS_VARIANCE_H

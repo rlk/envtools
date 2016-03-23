@@ -147,32 +147,78 @@ public:
         _g[0] = 0.0;
         _b[0] = 0.0;
 
+        double weightAccum = 0.0;
+        
         for (uint y = 0; y < height; ++y) {
             for (uint x = 0; x < width;  ++x) {
                 const uint i = y*width + x;
 
-                const double r = rgb[i*nc + 0];
-                const double g = rgb[i*nc + 1];
-                const double b = rgb[i*nc + 2];
+                double r = rgb[i*nc + 0];
+                double g = rgb[i*nc + 1];
+                double b = rgb[i*nc + 2];
 
                 double ixy = luminance(r,g,b);
 
                 // the latitude-longitude format overrepresents the area of regions near the poles.
                 // To compensate for this, the pixels of the probe image
                 // should first be scaled by cosφ.
-                const double lat = PI2 - PI * y / height;
-                ixy *= cos(lat);
+                const double cosLat = cos(PI2 - PI * y / height);
+                ixy *= cosLat;
+                r *= cosLat;
+                g *= cosLat;
+                b *= cosLat;
+                                
+                // Then compute the solid Angle of that thing
+                const double solidAngle = texelPixelSolidAngle(x, y, width,  height);
+                ixy *= solidAngle;
+                r *= solidAngle;
+                g *= solidAngle;
+                b *= solidAngle;
+
+                _sat[i] = ixy;
+
+                _r[i] = r;
+                _g[i] = g;
+                _b[i] = b;
+
+                weightAccum += solidAngle;
+                
+            }
+        }
+        
+        // normalize in order our image Accum exactly match 4 PI.
+        const double normalizer = 4.0 * PI / weightAccum;
+        
+        for (uint y = 0; y < height; ++y) {
+            for (uint x = 0; x < width;  ++x) {
+                
+                const uint i = y*width + x;
+
+                _sat[i] *= normalizer;
+                
+                //_r[i] *= normalizer;
+                //_g[i] *= normalizer;
+                //_b[i] *= normalizer;
+                
+            }
+        }
+        
+        // now we sum        
+        for (uint y = 0; y < height; ++y) {
+            for (uint x = 0; x < width;  ++x) {
+                const uint i = y*width + x;
 
                 // https://en.wikipedia.org/wiki/Summed_area_table
-                _sat[i] = ixy + I(x-1, y) + I(x, y-1) - I(x-1, y-1);
+                _sat[i] = _sat[i] + I(x-1, y) + I(x, y-1) - I(x-1, y-1);
 
-                _r[i]   = r   + R(x-1, y) + R(x, y-1) - R(x-1, y-1);
-                _g[i]   = g   + G(x-1, y) + G(x, y-1) - G(x-1, y-1);
-                _b[i]   = b   + B(x-1, y) + B(x, y-1) - B(x-1, y-1);
+                _r[i]   = _r[i]   + R(x-1, y) + R(x, y-1) - R(x-1, y-1);
+                _g[i]   = _g[i]   + G(x-1, y) + G(x, y-1) - G(x-1, y-1);
+                _b[i]   = _b[i]   + B(x-1, y) + B(x, y-1) - B(x-1, y-1);
 
             }
         }
-
+        
+        
         // integral log
         for (uint y = 0; y < _height; ++y)
         {

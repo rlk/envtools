@@ -246,8 +246,8 @@ void createAndMergeLights(const std::vector<satRegion>& regions, std::vector<lig
     // sort light
     std::sort(lights.begin(), lights.end());
 
-    #define MERGE 1
-    #ifdef MERGE
+#define MERGE 1
+#ifdef MERGE
 
     uint mergedLights = mergeLights(lights, newLights, width, height);
     // sort By sum now (changed the sortCriteria during merge)
@@ -270,6 +270,9 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
     std::cout << "[";
 
     for (std::vector<light>::const_iterator l = lights.begin(); l != lights.end() && i < lightNum; ++l) {
+
+        const double x = l->_centroidPosition._y / height;        
+        const double y = l->_centroidPosition._x / width;
 
         // convert x,y to direction
         double3 d;
@@ -297,15 +300,19 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
         const float gCol = l->_gAverage;
         const float bCol = l->_bAverage;
 
+
         // 1 JSON object per light
         std::cout << "{";
-        std::cout << " \"position\": [" << l->_centroidPosition._x << ", " << l->_centroidPosition._y << "] ,";
+        std::cout << " \"position\": [" << x << ", " << y << "] ,";
         std::cout << " \"direction\": [" << d._x << ", " << d._y << ", " << d._z << "], ";
-        std::cout << " \"luminosity\": " << l->_lumAverage << ", ";
+        std::cout << " \"luminosity\": " << (l->_lumAverage) << ", ";
         std::cout << " \"color\": [" << rCol << ", " << gCol << ", " << bCol << "], ";
-        std::cout << " \"size\": " << l->_areaSize/imageAreaSize << ", ";
-        std::cout << " \"area\": {\"x\":" << l->_x << ", \"y\":" << l->_y << ", \"w\":" << l->_w << ", \"h\":" << l->_h << "}, ";
-        std::cout << " \"variance\": " << l->_variance << " ";
+
+
+        std::cout << " \"area\": {\"x\":" << x << ", \"y\":" << y << ", \"w\":" << (l->_w/width) << ", \"h\":" << (l->_h/height) << "}, ";
+
+        std::cout << " \"variance\": " << (l->_sum ) << " ";
+
         std::cout << " }" << std::endl;
 
         if (i < lightNum - 1){
