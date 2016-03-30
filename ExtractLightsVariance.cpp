@@ -273,7 +273,10 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
 
         const double x = l->_centroidPosition._y / height;        
         const double y = l->_centroidPosition._x / width;
-
+        
+        const double w = static_cast <double>(l->_w) / width;        
+        const double h = static_cast <double>(l->_h) / height;
+        
         // convert x,y to direction
         double3 d;
 
@@ -307,12 +310,8 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
         std::cout << " \"direction\": [" << d._x << ", " << d._y << ", " << d._z << "], ";
         std::cout << " \"luminosity\": " << (l->_lumAverage) << ", ";
         std::cout << " \"color\": [" << rCol << ", " << gCol << ", " << bCol << "], ";
-
-
-        std::cout << " \"area\": {\"x\":" << x << ", \"y\":" << y << ", \"w\":" << (l->_w/width) << ", \"h\":" << (l->_h/height) << "}, ";
-
+        std::cout << " \"area\": {\"x\":" << x << ", \"y\":" << y << ", \"w\":" << w << ", \"h\":" << h << "}, ";
         std::cout << " \"variance\": " << (l->_sum ) << " ";
-
         std::cout << " }" << std::endl;
 
         if (i < lightNum - 1){
