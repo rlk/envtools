@@ -120,6 +120,8 @@ class ProcessEnvironment(object):
         self.textures = {}
         self.prefilterGPU = None
 
+        self.approximate_directional_lights = kwargs.get("approximate_directional_lights", False)
+
         self.compression_level = 9
 
         self.main_light = None
@@ -147,6 +149,26 @@ class ProcessEnvironment(object):
             json.dump(config, output, sort_keys=True, indent=4)
         else:
             json.dump(config, output)
+
+    def fix_source_environment(self, input, output):
+        """ Clean +inf nan from the environment"""
+        cmd = "iinfo --stats {}".format(input)
+        output_log = execute_command(cmd, verbose=False, print_command=True)
+
+        lines_list = output_log.split("\n")
+        max_value = sys.float_info.max
+        for line in lines_list:
+            index = line.find("Stats Max:")
+            if index != -1:
+                # extract only numbers
+                # Stats Avg: 1.839321 1.951460 1.527444 1.000000 (float)
+                # 1.839321 1.951460 1.527444 1.000000
+                s = line
+                max_values = s[s.find(": ") + 2: s.find("(") - 1].split(' ')
+                max_value = max(map(float, max_values))
+
+        cmd = "oiiotool -v {} --clamp:max={} -o {}".format(input, max_value, output)
+        execute_command(cmd)
 
     def compress(self):
         sys.stdout.write("compressing ")
@@ -427,8 +449,8 @@ class ProcessEnvironment(object):
             os.makedirs(self.output_directory)
 
         original_file = "/tmp/original_panorama.tif"
-        cmd = "iconvert '{}' {}".format(self.input_file, original_file)
-        execute_command(cmd)
+
+        self.fix_source_environment(self.input_file, original_file)
         self.panorama_highres = original_file
 
         cubemap_highres = "/tmp/highres_cubemap.tif"
@@ -476,18 +498,20 @@ class ProcessEnvironment(object):
         print "== {} cubemap_specular_create_mipmap ==".format( time.time() - start_tick )
         print ""
 
-        # extract lights from environment
-        # one main light
-        start_tick = time.time()
-        self.extract_light()
-        print "== {} extract_light ==".format( time.time() - start_tick )
-        print ""
+        if self.approximate_directional_lights:
+            print "approximate_directional_lights ", self.approximate_directional_lights
+            # extract lights from environment
+            # one main light
+            start_tick = time.time()
+            self.extract_light()
+            print "== {} extract_light ==".format(time.time() - start_tick)
+            print ""
 
-        # multiple lights
-        start_tick = time.time()
-        self.extract_lights()
-        print "== {} extract_lights ==".format( time.time() - start_tick )
-        print ""
+            # multiple lights
+            start_tick = time.time()
+            self.extract_lights()
+            print "== {} extract_lights ==".format(time.time() - start_tick)
+            print ""
 
         if not self.force_cpu:
             try:
@@ -569,6 +593,8 @@ def define_arguments():
                         help="how to blur the background, it uses the same code of prefiltering", default=0.1)
     parser.add_argument("--fixedge", action="store_true", help="fix edge for cubemap")
     parser.add_argument("--pretty", action="store_true", help="generate a config file pretty for human")
+    parser.add_argument("--approximateDirectionalLights", action="store_true", dest="approximate_directional_lights", help="generate directional lights from environment")
+
     return parser
 
 
@@ -586,6 +612,7 @@ def create_process_instance(args):
                                  nb_samples=int(args.nb_samples),
                                  background_blur=float(args.background_blur),
                                  write_by_channel=args.write_by_channel,
+                                 approximate_directional_lights=args.approximate_directional_lights,
                                  prefilter_stop_size=8,
                                  fixedge=args.fixedge,
                                  pretty=args.pretty,
