@@ -223,7 +223,8 @@ class ProcessEnvironment(object):
         write_by_channel = "-c" if self.write_by_channel else ""
         encoding = "-e " + encoding_string
         if max_level > 0:
-            cmd = "{} {} {} -p -n {} {} {}".format(cubemap_packer_cmd, encoding, write_by_channel, max_level, pattern, output)
+            cmd = "{} {} {} -p -n {} {} {}".format(cubemap_packer_cmd, encoding,
+                                                   write_by_channel, max_level, pattern, output)
         else:
             cmd = "{} {} {} {} {}".format(cubemap_packer_cmd, encoding, write_by_channel, pattern, output)
         execute_command(cmd)
@@ -475,27 +476,26 @@ class ProcessEnvironment(object):
         print output_log
         self.lights = output_log
 
-
     def run(self):
 
         start = time.time()
 
         start_tick = time.time()
         self.initBaseTexture()
-        print "== {} initBaseTexture ==".format( time.time() - start_tick )
+        print "== {} initBaseTexture ==".format(time.time() - start_tick)
         print ""
 
         # generate thumbnail
         start_tick = time.time()
         self.thumbnail_create(self.thumbnail_size)
-        print "== {} thumbnail_create ==".format( time.time() - start_tick )
+        print "== {} thumbnail_create ==".format(time.time() - start_tick)
         print ""
 
         # create mipmap to accelerate prefiltering
         # so it needs to be done before background and specular
         start_tick = time.time()
         self.cubemap_specular_create_mipmap(self.mipmap_size)
-        print "== {} cubemap_specular_create_mipmap ==".format( time.time() - start_tick )
+        print "== {} cubemap_specular_create_mipmap ==".format(time.time() - start_tick)
         print ""
 
         if self.approximate_directional_lights:
@@ -520,7 +520,7 @@ class ProcessEnvironment(object):
                 print "prepare gpu prefiltering"
                 self.prefilterGPU = Prefilter(self.mipmap_pattern)
                 self.sample_file = self.create_sample_GGX()
-                print "== {} create_sample_GGX ==".format( time.time() - start_tick )
+                print "== {} create_sample_GGX ==".format(time.time() - start_tick)
                 print ""
             except:
                 print "no opencl found fallback to cpu computation"
@@ -531,7 +531,7 @@ class ProcessEnvironment(object):
         start_tick = time.time()
         for size, blur in self.background_list:
             self.background_create(size, blur)
-        print "== {} background_create ==".format( time.time() - start_tick )
+        print "== {} background_create ==".format(time.time() - start_tick)
         print ""
 
         # generate prefilter ue4 specular
@@ -539,19 +539,19 @@ class ProcessEnvironment(object):
         prefilter_stop_size = self.prefilter_stop_size  # typically do not use cubemap size < 8
         for size in self.prefilter_list:
             self.specular_create_prefilter(size, prefilter_stop_size)
-        print "== {} specular_create_prefilter ==".format( time.time() - start_tick )
+        print "== {} specular_create_prefilter ==".format(time.time() - start_tick)
         print ""
 
         # generate irradiance*PI panorama/cubemap/sph
         start_tick = time.time()
         self.compute_irradiance()
-        print "== {} compute_irradiance ==".format( time.time() - start_tick )
+        print "== {} compute_irradiance ==".format(time.time() - start_tick)
         print ""
 
         # precompute lut brdf
         start_tick = time.time()
         self.compute_brdf_lut_ue4()
-        print "== {} compute_brdf_lut_ue4 ==".format( time.time() - start_tick )
+        print "== {} compute_brdf_lut_ue4 ==".format(time.time() - start_tick)
         print ""
 
         # register mipspecular
@@ -593,7 +593,8 @@ def define_arguments():
                         help="how to blur the background, it uses the same code of prefiltering", default=0.1)
     parser.add_argument("--fixedge", action="store_true", help="fix edge for cubemap")
     parser.add_argument("--pretty", action="store_true", help="generate a config file pretty for human")
-    parser.add_argument("--approximateDirectionalLights", action="store_true", dest="approximate_directional_lights", help="generate directional lights from environment")
+    parser.add_argument("--approximateDirectionalLights", action="store_true",
+                        dest="approximate_directional_lights", help="generate directional lights from environment")
 
     return parser
 
