@@ -1036,7 +1036,8 @@ inline bool computeLightSampleInLocalSpace(uint i, uint numSamples, uint size, f
 
     // Original paper suggest biasing the mip to improve the results
     float mipBias = 1.0f; // I tested that the result is better with bias 1
-    float mipLevel = std::max(0.5 * log2(omegaS / omegaP) + mipBias, 0.0);
+    double maxLod = log2(size);
+    float mipLevel = std::min( std::max(0.5 * log2(omegaS / omegaP) + mipBias, 0.0), maxLod);
 
     result[0] = L[0];
     result[1] = L[1];
