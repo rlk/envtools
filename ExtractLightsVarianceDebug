@@ -138,17 +138,17 @@ void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<lig
 
 
     // drawRegions first
-    /*
+    
     debugColorR = 0;
     debugColorG = 255;
     debugColorB = 0;
     debugColorA = 255;
 
-     drawRegions(&conv[0], width, height, regions, nc);
-    */
+//     drawRegions(&conv[0], width, height, regions, nc);
+    
 
     // drawLights
-
+/*
     // draw Light above regions
     i = 0;
     lightNum = lights.size();
@@ -163,7 +163,7 @@ void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<lig
         drawLight(&conv[0], width, height, *l, nc);
         i++;
     }
-
+*/
     lightNum = mainLights.size();
     //lightNum = std::min(3, (int)lightNum);
     //std::cout << "MAINLIGHTS " << lightNum;

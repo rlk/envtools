@@ -211,11 +211,13 @@ public:
         
         
         for (uint y = 0; y < height; ++y) {
+            const double posY = (double)y / (double)height;
+        
             // the latitude-longitude format overrepresents the area of regions near the poles.
             // To compensate for this, the pixels of the probe image
             // should first be scaled by cosφ.
             // (φ == 0 at middle heightof image input)
-            //const double cosLat = cos(PI* (((double)y / (double)height) - 0.5));
+                const double cosLat = cos(PI* (posY - 0.5));
             
             for (uint x = 0; x < width;  ++x) {
 
@@ -227,7 +229,7 @@ public:
 
                 double ixy = luminance(r,g,b);
            
-                //ixy *= cosLat;
+                ixy *= cosLat;
                 //r *= cosLat;
                 //g *= cosLat;
                 //b *= cosLat;
@@ -236,8 +238,8 @@ public:
                 
                 // convert panorama to direction x,y,z
                 //https://www.shadertoy.com/view/4dsGD2
-                double theta = (1.0 - y / height) * PI;
-                double phi   = x / width * TAU;
+                double theta = (1.0 - posY) * PI;
+                double phi   = (double) x / (double)width * TAU;
 	
                 // Equation from http://graphicscodex.com  [sphry]
                 d[0] =  sin(theta) * sin(phi);

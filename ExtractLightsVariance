@@ -13,6 +13,7 @@ struct double2 {
 struct double3 {
     double _x, _y, _z;
 };
+struct light;
 
 struct light {
 
@@ -42,6 +43,8 @@ struct light {
 
     double _sortCriteria;
 
+    std::vector<light> childrenLights;
+    
     // sort facility
     bool operator< (const light &rhs) const
     {

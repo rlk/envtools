@@ -7,6 +7,7 @@
 
 
 #include <iostream>
+#include <getopt.h>
 #include <vector>
 #include <cassert>
 #include <algorithm>
@@ -24,6 +25,7 @@ OIIO_NAMESPACE_USING
 #include "ExtractLightsVariance"
 #include "SummedAreaTable"
 #include "SummedAreaTableRegion"
+#include "ExtractLightsMerge"
 #if !defined(NDEBUG)
 #include "ExtractLightsVarianceDebug"
 #endif
@@ -78,197 +80,17 @@ void medianVarianceCut(const SummedAreaTable& img, const uint n, std::vector<sat
     splitRecursive(r, n, regions);
 }
 
-uint mergeLights(std::vector<light>& lights, std::vector<light>& newLights, uint width, uint height)
-{
-
-    // AreaSize under which we merge
-    const uint mergeindexPos =  (lights.size() * 25) / 100;
-    const double mergeAreaSize = lights[mergeindexPos]._areaSize;
-
-    const uint border = 5;
-    uint numMergedLightTotal = 0;
-
-    for (std::vector<light>::iterator lightIt = lights.begin(); lightIt != lights.end(); ++lightIt)
-    {
-        // already merged, we do nothing
-        if (lightIt->_merged) continue;
 
 
-        std::vector<light>::iterator lCurrent = lightIt;
-
-        uint x = lCurrent->_x;
-        uint y = lCurrent->_y;
-        uint w = lCurrent->_w;
-        uint h = lCurrent->_h;
-
-        uint numMergedLight;
-        do{
-
-            numMergedLight = 0;
-
-            for (std::vector<light>::iterator l = lights.begin(); l != lights.end(); ++l) {
-
-                // ignore already merged and itself
-                if (l->_merged || l == lCurrent || l->_mergedNum > 0 ) continue;
-
-                // ignore too big
-                if (mergeAreaSize < l->_areaSize) continue;
-
-                bool intersect2D = !(l->_y-border > y+h || l->_y+l->_h+border < y || l->_x-border > x + w || l->_x+l->_w+border < x);
-                // try left/right border as it's a env wrap
-                // complexity arise, how to merge...and then retest after
-                /*
-                  if (!intersect2D ){
-                  if( x == 0 ){
-                  //check left borders
-                  intersect2D = !(l->_y-border > y+h || l->_y+l->_h+border < y || l->_x-border > width + w || l->_x+l->_w+border < width);
-                  }else if( x+w == width ){
-                  //check right borders
-                  intersect2D = !(l->_y-border > y+h || l->_y+l->_h+border < y || l->_x-border > w + (width - x) || l->_x+l->_w+border < (width - x));
-                  }
-                  }
-                */
-
-                //  share borders
-                if (intersect2D) {
-
-                    // goes after next merged
-                    l->_merged = true;
-
-                    lCurrent->_x = std::min(x, l->_x);
-                    lCurrent->_y = std::min(y, l->_y);
-
-                    lCurrent->_w = std::max(x + w, l->_x + l->_w) - lCurrent->_x;
-                    lCurrent->_h = std::max(y + h, l->_y + l->_h) - lCurrent->_y;
-
-                    x = lCurrent->_x;
-                    y = lCurrent->_y;
-                    w = lCurrent->_w;
-                    h = lCurrent->_h;
-
-                    // light is bigger, better candidate to main light
-                    lCurrent->_mergedNum++;
-                    lCurrent->_sum += l->_sum;
-
-                    numMergedLight++;
-                }
-            }
-
-        } while (numMergedLight > 0);
-
-        if (lCurrent->_mergedNum > 0){
-
-            lCurrent->_areaSize = lCurrent->_w * lCurrent->_h;
-            lCurrent->_lumAverage = lCurrent->_sum / lCurrent->_areaSize;
-
-            //lCurrent->_sortCriteria = lCurrent->_lumAverage;
-            lCurrent->_sortCriteria = lCurrent->_sum;
-
-            newLights.push_back(*lCurrent);
-
-            numMergedLightTotal += lCurrent->_mergedNum;
-        }
-
-    }
-
-    for (std::vector<light>::iterator lCurrent = lights.begin(); lCurrent != lights.end(); ++lCurrent)
-    {
-        // add remaining lights
-        if (!lCurrent->_merged && lCurrent->_mergedNum == 0){
-
-            lCurrent->_lumAverage = lCurrent->_sum / lCurrent->_areaSize;
-
-            //lCurrent->_sortCriteria = lCurrent->_lumAverage;
-            lCurrent->_sortCriteria = lCurrent->_sum;
-
-            newLights.push_back(*lCurrent);
-        }
-    }
-
-    return numMergedLightTotal;
-
-}
-
-
-/**
- * Create a light source position from each region by querying its centroid
- * Merge small area light neighbouring
- */
-void createAndMergeLights(const std::vector<satRegion>& regions, std::vector<light>& lights, std::vector<light>& newLights, float *rgba, const uint width, const uint height, const uint nc)
-{
-
-    // convert region into lights
-    for (std::vector<satRegion>::const_iterator region = regions.begin(); region != regions.end(); ++region)
-    {
-
-        light l;
-
-        // init values
-        l._merged = false;
-        l._mergedNum = 0;
-
-        l._x = region->_x;
-        l._y = region->_y;
-        l._w = region->_w;
-        l._h = region->_h;
-
-        // set light at centroid
-        l._centroidPosition = region->centroid();
-        // light area Size
-        l._areaSize = region->areaSize();
-
-        // sat lum sum of area
-        l._sum = region->getSum();
-
-        // sat lum sum of area
-        l._variance = region->getVariance();
-
-        // average Result
-        l._lumAverage = region->getMean();
-        l._rAverage = region->_r / l._areaSize;
-        l._gAverage = region->_g / l._areaSize;
-        l._bAverage = region->_b / l._areaSize;
-
-
-        l._sortCriteria = l._areaSize;
-        //l._sortCriteria = l._lumAverage;
-
-        const uint i = static_cast<uint>(l._centroidPosition._y*width + l._centroidPosition._x);
-
-        double r = rgba[i*nc + 0];
-        double g = rgba[i*nc + 1];
-        double b = rgba[i*nc + 2];
-        l._luminancePixel = luminance(r,g,b);
-
-        lights.push_back(l);
-    }
-
-    // sort light
-    std::sort(lights.begin(), lights.end());
-
-#define MERGE 1
-#ifdef MERGE
-
-    uint mergedLights = mergeLights(lights, newLights, width, height);
-    // sort By sum now (changed the sortCriteria during merge)
-    std::sort(newLights.begin(), newLights.end());
-    std::reverse(newLights.begin(), newLights.end());
-
-#else
-    newLights.resize(lights.size());
-    std::copy(lights.begin(), lights.end(), newLights.begin());
-#endif
-
-}
-
-
-void outputJSON(const std::vector<light> &lights, uint height, uint width, uint imageAreaSize)
+void outputJSON(const std::vector<light> &lights, uint height, uint width, uint imageAreaSize, double luminanceSum)
 {
     size_t i = 0;
     size_t lightNum = lights.size();
 
     std::cout << "[";
-
+    
+    double globalVariance = luminanceSum /imageAreaSize;
+    
     for (std::vector<light>::const_iterator l = lights.begin(); l != lights.end() && i < lightNum; ++l) {
 
         const double x = l->_centroidPosition._y / height;        
@@ -311,7 +133,8 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
         std::cout << " \"luminosity\": " << (l->_lumAverage) << ", ";
         std::cout << " \"color\": [" << rCol << ", " << gCol << ", " << bCol << "], ";
         std::cout << " \"area\": {\"x\":" << x << ", \"y\":" << y << ", \"w\":" << w << ", \"h\":" << h << "}, ";
-        std::cout << " \"variance\": " << (l->_sum ) << " ";
+        std::cout << " \"sum\": " << (l->_sum ) << ", ";
+        std::cout << " \"variance\": " << (l->_variance ) << " ";
         std::cout << " }" << std::endl;
 
         if (i < lightNum - 1){
@@ -327,65 +150,177 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
 
 }
 
+////////////////////////////////////////////////
+static int usage(const std::string& name)
+{
+    std::cerr << "Usage: " << name << " [-a Areasize] [-r ratioLight] [-n numCuts] file.hdr" << std::endl;
+    return 1;
+}
 
 ////////////////////////////////////////////////
 int main(int argc, char** argv)
 {
-    if (argc < 2) {
-        std::cerr << "Use " << argv[0] << " filename" << std::endl;
-        return 1;
+    // max area encased by light extracted, ratio of env map size
+    // default is using Area of 5% of EnvMap as dir approx light
+    float ratioAreaSizeMax = 0.01f;
+    // Idea is to limit light extraction to analytic directional light
+    //  So we must limite area and power extracted
+    // as more the power means more difference with Env lighting
+    // when we compute shadow as
+    // "real time shadows =  lightEnv - LightExtracted"
+    // ratioLight = luminanceLight / luminanceEnv
+    float ratioLuminanceLight = 0.5f;// ratio of lightExtracted On Global Illumination sum
+    int numCuts = 8;// number of division squared of the envmap of same lighting power
+
+    int c;    
+    while ((c = getopt(argc, argv, "a:r:n")) != -1)
+    {        
+        switch (c)
+        {
+        case 'a': ratioAreaSizeMax = atof(optarg); break;
+        case 'r': ratioLuminanceLight = atof(optarg); break;
+        case 'n': numCuts = atoi(optarg); break;
+
+        default: return usage(argv[0]);
+        }
     }
+    
 
-    ////////////////////////////////////////////////
-    // load image
-    int width, height, nc;
-    float *rgba;
+    if ( optind < argc )
+    {
+        ////////////////////////////////////////////////
+        // load image
+        int width, height, nc;
+        float *rgba;
 
-    ImageInput* input = ImageInput::open ( argv[1] );
-    const ImageSpec &spec (input->spec());
-    width = spec.width;
-    height = spec.height;
-    nc = spec.nchannels;
-    const uint imageAreaSize = width*height;
-    rgba = new float[imageAreaSize*nc];
-    input->read_image( TypeDesc::FLOAT, rgba);
-    input->close();
+        ImageInput* input = ImageInput::open ( argv[optind] );
+    
+        if (!input) {
+            std::cerr << "Cannot open " << argv[1] << " image file" << std::endl;
+            return 1;
+        }
+    
+        const ImageSpec &spec (input->spec());
+        width = spec.width;
+        height = spec.height;
+        nc = spec.nchannels;
+        const uint imageAreaSize = width*height;
+        rgba = new float[imageAreaSize*nc];
+        input->read_image( TypeDesc::FLOAT, rgba);
+        input->close();
 
-    ////////////////////////////////////////////////
-    // create summed area table of luminance image
-    SummedAreaTable lum_sat;
+        ////////////////////////////////////////////////
+        // create summed area table of luminance image
+        SummedAreaTable lum_sat;
 
-    lum_sat.createLum(rgba, width, height, nc);
+        lum_sat.createLum(rgba, width, height, nc);
+        
+        ////////////////////////////////////////////////
+        // apply cut algorithm
+        std::vector<satRegion> regions;
 
-    ////////////////////////////////////////////////
-    // apply cut alogrithm
-    std::vector<satRegion> regions;
+        medianVarianceCut(lum_sat, numCuts, regions); // max 2^n cuts
 
-    medianVarianceCut(lum_sat, 8, regions); // max 2^n cuts
+        if (regions.empty())
+        {
+            std::cerr << "Cannot cut " << argv[1] << " into light regions" << std::endl;
+            return 1;            
+        }
+        
+        ////////////////////////////////////////////////
+        // create Lights from regions
+        std::vector<light> lights;
+        std::vector<light> mainLights;
 
-    ////////////////////////////////////////////////
-    // create Lights from regions
-    std::vector<light> lights;
-    std::vector<light> mainLights;
+        //
+        // convert absolute input parameters
+        // to relative to environment at hand value.
+        // From ratio to pixel squared area
+        /// Light Max luminance in percentage 
+        double luminanceSum = lum_sat.sum(0,0,
+                                          width-1,0,
+                                          width-1,height-1,
+                                          0,height-1);
+        
+        const double luminanceMaxLight = ratioLuminanceLight*luminanceSum;
 
-    createAndMergeLights(regions, lights, mainLights, rgba, width, height, nc);
+        // And he saw that light was good, and separated light from darkness
+        createLightsFromRegions(regions, lights, rgba, width, height, nc);
+        
+        // sort lights
+        // the smaller, the more powerful luminance
+        std::sort(lights.begin(), lights.end());
+    
+        
 
-    ////////////////////////////////////////////////
-    // output JSON
+#define MERGE 1
+#ifdef MERGE
+          
+        // Light Area Size under which we merge
+        // default to size of the median region size
+        // if lots of small lights => give small area
+        // if lots of big lights => give big area
+        const uint mergeindexPos =  (lights.size() * 25) / 100;
+        const double mergeAreaSize = lights[mergeindexPos]._areaSize;
+        //const double mergeAreaSize = 0.1 * imageAreaSize;
+        
+        uint mergedLights = mergeLights(lights, mainLights, width, height, mergeAreaSize, luminanceMaxLight);
 
-    // do we want to output/save original same variance light ?
-    // Merged Light sorted By Area Size
-    // outputJSON(lights);
+        
+        // sort By sum now (changed the sort Criteria during merge)
+        // biggest Sum first
+        std::sort(mainLights.begin(), mainLights.end());
+        std::reverse(mainLights.begin(), mainLights.end());
 
-    // Merged Light sorted By Luminance intensity
-    outputJSON(mainLights, height, width, imageAreaSize);
+#define SELECT 1
+#ifdef SELECT
+        
+        // now keep lights from inside merged Zone
+        lights.clear();
+        const double areaSizeMax = ratioAreaSizeMax * imageAreaSize;
+        mergedLights = selectLights(mainLights, lights, width, height, areaSizeMax, luminanceMaxLight, luminanceSum);
+
+        mainLights.clear();
+        mainLights.resize(lights.size());
+        std::copy(lights.begin(), lights.end(), mainLights.begin());
+        
+        // sort By sum now (changed the sort Criteria during merge)
+        // biggest sum first
+        std::sort(mainLights.begin(), mainLights.end());
+        std::reverse(mainLights.begin(), mainLights.end());
+        
+#endif // SELECT
+        
+#else
+        
+        newLights.resize(lights.size());
+        std::copy(lights.begin(), lights.end(), newLights.begin());
+        
+#endif
+        
+        ////////////////////////////////////////////////
+        // output JSON
+
+        // do we want to output/save original same variance light ?
+        // Merged Light sorted By Area Size
+        //outputJSON(lights, height, width, imageAreaSize );
+
+        // Merged Light sorted By Luminance intensity
+        outputJSON(mainLights, height, width, imageAreaSize, luminanceSum);
 
 
 #if !defined(NDEBUG)
 
-    debugDrawLight(regions, lights, mainLights, rgba, width, height, nc);
+        debugDrawLight(regions, lights, mainLights, rgba, width, height, nc);
 
 #endif // !defined(NDEBUG)
-
+        
+    }
+    else{
+        
+        return usage( argv[0] );
+        
+    }
+    
     return 0;
 }
