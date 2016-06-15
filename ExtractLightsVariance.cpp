@@ -34,7 +34,7 @@ OIIO_NAMESPACE_USING
  * Recursively split a region r and append new subregions
  * A and B to regions vector when at an end.
  */
-void splitRecursive(const satRegion& r, const uint n, std::vector<satRegion>& regions)
+void splitRecursive(const SatRegion& r, const uint n, SatRegionVector& regions)
 {
     // check: can't split any further?
     if (r._w < 2 || r._h < 2 || n == 0)
@@ -44,7 +44,7 @@ void splitRecursive(const satRegion& r, const uint n, std::vector<satRegion>& re
         return;
     }
 
-    satRegion A, B;
+    SatRegion A, B;
 
     if (r._w > r._h)
         r.split_w(A, B);
@@ -68,12 +68,12 @@ void splitRecursive(const satRegion& r, const uint n, std::vector<satRegion>& re
  * n - number of subdivision, yields 2^n cuts
  * regions - an empty vector that gets filled with generated regions
  */
-void medianVarianceCut(const SummedAreaTable& img, const uint n, std::vector<satRegion>& regions)
+void medianVarianceCut(const SummedAreaTable& img, const uint n, SatRegionVector& regions)
 {
     regions.clear();
 
     // insert entire image as start region
-    satRegion r;
+    SatRegion r;
     r.create(0, 0, img.width(), img.height(), &img);
 
     // recursively split into subregions
@@ -82,7 +82,7 @@ void medianVarianceCut(const SummedAreaTable& img, const uint n, std::vector<sat
 
 
 
-void outputJSON(const std::vector<light> &lights, uint height, uint width, uint imageAreaSize, double luminanceSum)
+void outputJSON(const LightVector &lights, uint height, uint width, uint imageAreaSize, double luminanceSum)
 {
     size_t i = 0;
     size_t lightNum = lights.size();
@@ -91,7 +91,7 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
     
     double globalVariance = luminanceSum /imageAreaSize;
     
-    for (std::vector<light>::const_iterator l = lights.begin(); l != lights.end() && i < lightNum; ++l) {
+    for (LightVector::const_iterator l = lights.begin(); l != lights.end() && i < lightNum; ++l) {
 
         const double x = l->_centroidPosition._y / height;        
         const double y = l->_centroidPosition._x / width;
@@ -100,7 +100,7 @@ void outputJSON(const std::vector<light> &lights, uint height, uint width, uint 
         const double h = static_cast <double>(l->_h) / height;
         
         // convert x,y to direction
-        double3 d;
+        Double3 d;
 
         //https://www.shadertoy.com/view/4dsGD2
         double theta = (1.0 - l->_centroidPosition._y / height) * PI;
@@ -158,6 +158,9 @@ static int usage(const std::string& name)
 }
 
 ////////////////////////////////////////////////
+// The Real Deal
+// some examples scripts here for multi or single update:
+// https://gist.github.com/Kuranes/fa7466291c9fad3cdfb845f80fabe646
 int main(int argc, char** argv)
 {
     // max area encased by light extracted, ratio of env map size
@@ -217,7 +220,7 @@ int main(int argc, char** argv)
         
         ////////////////////////////////////////////////
         // apply cut algorithm
-        std::vector<satRegion> regions;
+        SatRegionVector regions;
 
         medianVarianceCut(lum_sat, numCuts, regions); // max 2^n cuts
 
@@ -229,8 +232,8 @@ int main(int argc, char** argv)
         
         ////////////////////////////////////////////////
         // create Lights from regions
-        std::vector<light> lights;
-        std::vector<light> mainLights;
+        LightVector lights;
+        LightVector mainLights;
 
         //
         // convert absolute input parameters

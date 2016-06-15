@@ -1188,4 +1188,14 @@ inline const double& getUniformSampleOnConeWeightSum() {
 //      return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 //  }
 
+// rgb to luminance
+template <typename T> T luminance(const T r, const T g, const T b) {
+    return r * 0.2125f + g * 0.7154f + b * 0.0721f;
+}
+
+// solid Angle
+template <typename T> T AreaElement( const T x, const T y )
+{
+    return atan2(x * y, sqrt(x * x + y * y + 1.0f));
+}
 #endif

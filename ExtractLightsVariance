@@ -6,18 +6,20 @@
 
 #include "Math"
 
-struct double2 {
+struct Double2 {
     double _x, _y;
 };
 
-struct double3 {
+struct Double3 {
     double _x, _y, _z;
 };
-struct light;
 
-struct light {
+struct Light;
+typedef std::vector<Light> LightVector;
 
-    double2 _centroidPosition;
+struct Light {
+
+    Double2 _centroidPosition;
 
     // light Area   
     uint _w,_h;
@@ -43,10 +45,10 @@ struct light {
 
     double _sortCriteria;
 
-    std::vector<light> childrenLights;
+    LightVector childrenLights;
     
     // sort facility
-    bool operator< (const light &rhs) const
+    bool operator< (const Light &rhs) const
     {
         return _sortCriteria < rhs._sortCriteria ;
     }
@@ -54,19 +56,8 @@ struct light {
 };
 
 
-static double luminance(double r, double g, double b)
-{
-    return r*0.2125f + g*0.7154f + b*0.0721f;
-}
-
-// solid Angle
-static double AreaElement( const double x, const double y )
-{
-    return atan2(x * y, sqrt(x * x + y * y + 1.0));
-}
-
 // a pixel to a solidAngle
-static double texelAreaSolidAngle(const double aU, const double aV, const double aW, const double aH, const uint width, const uint height)
+static double texelAreaSolidAnglePanorama(const double aU, const double aV, const double aW, const double aH, const uint width, const uint height)
 {
     // Shift from a demi texel, mean 1.0 / size  with U and V in [-1..1]
     const double InvResolutionW = 1.0 / width;
@@ -85,7 +76,7 @@ static double texelAreaSolidAngle(const double aU, const double aV, const double
 }
 
 // solid Angle: aka resolution independent results
-static double texelPixelSolidAngle(const double aU, const double aV, const uint width, const uint height) 
+static double texelPixelSolidAnglePanorama(const double aU, const double aV, const uint width, const uint height) 
 {
     // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
     // ( 0.5 is for texel center addressing)

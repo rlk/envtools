@@ -11,14 +11,14 @@
 /**
  * A subregion in a SummedAreaTable.
  */
-struct satRegion
+struct SatRegion
 {
 public:
 
     const SummedAreaTable* _sat;
 
-    // satRegion non-discrete center
-    double2 coord;
+    // SatRegion non-discrete center
+    Double2 coord;
 
     int _x, _y;
     uint _w, _h;
@@ -100,7 +100,7 @@ public:
     // Cline etAll 2006
     double getCornerDeviation() const
     {
-        const double2 c = centroid();
+        const Double2 c = centroid();
         const double fav = _sat->I1(c._x,c._y);
 
 
@@ -182,20 +182,20 @@ public:
 
     }
 
-#define VARIANCE_MIN 1
+//#define VARIANCE_MIN 1
 #ifndef VARIANCE_MIN
 
 // MEDIAN CUT Fastest by far
 
     // median cut split criteria
-    double splitCriteria(const satRegion &sat) const
+    double splitCriteria(const SatRegion &sat) const
     {
         // median cut
         return sat.getSum() * 2.0 >= getSum();
 
     }
 
-    void split_w(satRegion& A) const
+    void split_w(SatRegion& A) const
     {
         for (uint  w = 1; w <= _w; ++w)
         {
@@ -207,7 +207,7 @@ public:
         }
     }
 
-    void split_h(satRegion& A) const
+    void split_h(SatRegion& A) const
     {
         for (uint h = 1; h <= _h; ++h)
         {
@@ -237,14 +237,14 @@ public:
     }
 
 
-    void split_w(satRegion& A) const
+    void split_w(SatRegion& A) const
     {
         assert(_w > 2);
 
         double minV = DBL_MAX;
         double maxV = DBL_MIN;
 
-        satRegion B;
+        SatRegion B;
         uint minSplt;
         for (uint  w = 1; w <= _w; ++w)
         {
@@ -262,14 +262,14 @@ public:
         A.create(_x, _y, minSplt, _h, _sat);
     }
 
-    void split_h(satRegion& A) const
+    void split_h(SatRegion& A) const
     {
         assert(_h > 2);
 
         double minV = DBL_MAX;
         double maxV = DBL_MIN;
 
-        satRegion B;
+        SatRegion B;
         uint minSplt;
         for (uint h = 1; h <= _h; ++h)
         {
@@ -293,7 +293,7 @@ public:
     /**
      * Split region horizontally into subregions A and B.
      */
-    void split_w(satRegion& A, satRegion& B) const
+    void split_w(SatRegion& A, SatRegion& B) const
     {
         split_w(A);
         B.create(_x + (A._w-1), _y, _w - A._w, _h, _sat);
@@ -302,15 +302,15 @@ public:
     /**
      * Split region vertically into subregions A and B.
      */
-    void split_h(satRegion& A, satRegion& B) const
+    void split_h(SatRegion& A, SatRegion& B) const
     {
         split_h(A);
         B.create(_x, _y + (A._h-1), _w, _h - A._h, _sat);
     }
 
-    double2 centroid() const
+    Double2 centroid() const
     {
-        double2 c;
+        Double2 c;
         c._x = _x + _w*0.5;
         c._y = _y + _h*0.5;
         return c;
@@ -323,5 +323,5 @@ public:
 
 
 };
-
+typedef std::vector<SatRegion> SatRegionVector;
 #endif // SUMMED_AREA_TABLE_REGION_H

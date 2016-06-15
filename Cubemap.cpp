@@ -16,8 +16,8 @@
 
 OIIO_NAMESPACE_USING
 
-void texelCoordToVect(int face, float ui, float vi, uint size, float* dirResult, int fixup = 0);
-void vectToTexelCoord(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v);
+void texelCoordToVectCubeMap(int face, float ui, float vi, uint size, float* dirResult, int fixup = 0);
+void vectToTexelCoordCubeMap(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v);
 
 Cubemap::Cubemap()
 {
@@ -224,7 +224,7 @@ void Cubemap::MipLevel::buildNormalizerSolidAngleCubemap(uint size, int fixup)
 
             for(u=0; u < size; u++) {
 
-                texelCoordToVect(iCubeFace, (float)u, (float)v, size, texelPtr, fixup);
+                texelCoordToVectCubeMap(iCubeFace, (float)u, (float)v, size, texelPtr, fixup);
                 *(texelPtr + 3) = texelCoordSolidAngle(iCubeFace, (float)u, (float)v);
                 texelPtr += _samplePerPixel;
 
@@ -411,9 +411,6 @@ Cubemap* Cubemap::shFilterCubeMap(bool useSolidAngleWeighting, int fixup, int ou
     return dstCubemap;
 }
 
-template <typename T> T luminance(const T r, const T g, const T b) {
-    return r * 0.2125f + g * 0.7154f + b * 0.0721f;
-}
 
 // Gets the higher pixel Luminosity value of an float pixel RGB Array
 float Cubemap::computeImageMaxLuminosity ( const float * const pixels, const int stride, const uint width)
@@ -677,7 +674,7 @@ void Cubemap::computeMainLightDirection ()
 
     if (width > 1){
         // divide by Zero with width == 1
-        texelCoordToVect(maxFace, (float)x, (float)y, width, &direction[0], 1);
+        texelCoordToVectCubeMap(maxFace, (float)x, (float)y, width, &direction[0], 1);
     }
     else{
         std::cerr << "computeMainLightDirection: default Direction (Too Uniform Ligthing Cubemap)" << std::endl;
@@ -983,7 +980,7 @@ void Cubemap::iterateOnFace( uint face, float roughnessLinear, const Cubemap& cu
             Vec3f direction, resultColor;
             int index = lineIndex + i*getSamplePerPixel();
 
-            texelCoordToVect( face, float(i), float(j), size, &direction[0], fixup ? 1 : 0 );
+            texelCoordToVectCubeMap( face, float(i), float(j), size, &direction[0], fixup ? 1 : 0 );
 
             if ( roughnessLinear == 0.0 || nbSamples == 1) { // use a copy from the good mipmap level
                 cubemap.getImages(nativeResolution).getSample( direction, resultColor);
@@ -1050,7 +1047,7 @@ struct Worker {
                 Vec3f direction, resultColor;
                 int index = lineIndex + i*_samplePerPixel;
 
-                texelCoordToVect( _face, float(i), float(j), _size, &direction[0], _fixup );
+                texelCoordToVectCubeMap( _face, float(i), float(j), _size, &direction[0], _fixup );
 
                 T::pixelOperator(_cubemap, _nbSamples, _nativeResolution, direction, resultColor);
 
@@ -1224,7 +1221,7 @@ Vec3f Cubemap::averageEnvMap( const Vec3f& R, const uint numSamples ) const {
 
 
 
-void texelCoordToVect(int face, float ui, float vi, uint size, float* dirResult, int fixup) {
+void texelCoordToVectCubeMap(int face, float ui, float vi, uint size, float* dirResult, int fixup) {
 
     float u,v;
 
@@ -1267,7 +1264,7 @@ void texelCoordToVect(int face, float ui, float vi, uint size, float* dirResult,
 // s   =   ( sc/|ma| + 1 ) / 2
 // t   =   ( tc/|ma| + 1 ) / 2
 
-void vectToTexelCoord(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v) {
+void vectToTexelCoordCubeMap(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v) {
 
     int bestAxis = 0;
     if ( fabs(direction[1]) > fabs(direction[0]) ) {
@@ -1314,7 +1311,7 @@ void Cubemap::MipLevel::getSample(const Vec3f& direction, Vec3f& color ) const {
     int faceIndex;
 
     int size = getSize();
-    vectToTexelCoord(direction, size, faceIndex, u,v );
+    vectToTexelCoordCubeMap(direction, size, faceIndex, u,v );
 
 
     const float ii = clamp(u - 0.5f, 0.0f, size - 1.0f);

@@ -8,13 +8,13 @@
 /**
  * convert Env map Regions to Lights
  */ 
-void createLightsFromRegions(const std::vector<satRegion>& regions, std::vector<light>& lights, const float *rgba, const uint width, const uint height, const uint nc)
+void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights, const float *rgba, const uint width, const uint height, const uint nc)
 {
     // convert region into lights
-    for (std::vector<satRegion>::const_iterator region = regions.begin(); region != regions.end(); ++region)
+    for (SatRegionVector::const_iterator region = regions.begin(); region != regions.end(); ++region)
     {
 
-        light l;
+        Light l;
 
         // init values
         l._merged = false;
@@ -61,7 +61,7 @@ void createLightsFromRegions(const std::vector<satRegion>& regions, std::vector<
 /*
  *  Merge a light into another and store a copy inside the parent
  */
-void mergeLight(light& lightParent, light& lightChild)
+void mergeLight(Light& lightParent, Light& lightChild)
 {
     // exclude from next merges
     lightChild._merged = true;
@@ -107,7 +107,7 @@ void mergeLight(light& lightParent, light& lightChild)
  * not a constructor, not struct member as it's specific for merge
  *  we copy only parts
  */
-void lightCopy(light &lDest, const light &lSrc)
+void lightCopy(Light &lDest, const Light &lSrc)
 {    
     lDest._merged = false;
     lDest._mergedNum = 0;
@@ -128,7 +128,7 @@ void lightCopy(light &lDest, const light &lSrc)
 /*
  * intersect lights with another light
  */
-bool intersectLightAgainstLights2D(const std::vector<light> &lights, const light &lightCandidate, int border)
+bool intersectLightAgainstLights2D(const LightVector &lights, const Light &lightCandidate, int border)
 {
     if (lights.empty()) return true;
     
@@ -138,7 +138,7 @@ bool intersectLightAgainstLights2D(const std::vector<light> &lights, const light
     int x2 = lightCandidate._x + lightCandidate._w + border;
     int y2 = lightCandidate._y + lightCandidate._h + border;
     
-    for (std::vector<light>::const_iterator l = lights.begin(); l != lights.end(); ++l)
+    for (LightVector::const_iterator l = lights.begin(); l != lights.end(); ++l)
     {
         if (!(l->_y > y2 || l->_y+l->_h < y1 || l->_x > x2 || l->_x+l->_w < x1))
         {
@@ -152,16 +152,16 @@ bool intersectLightAgainstLights2D(const std::vector<light> &lights, const light
 /**
  * Merge small area light neighbour with small area light neighbours
  */
-uint mergeLights(std::vector<light>& lights, std::vector<light>& newLights, const uint width, const uint height, const double areaSizeMax, const double luminanceMaxLight)
+uint mergeLights(LightVector& lights, LightVector& newLights, const uint width, const uint height, const double areaSizeMax, const double luminanceMaxLight)
 {
 
-    // discard or keep light too near an current light
+    // discard or keep Light too near an current light
     const int border = 5;//static_cast <uint> (sqrt (areaSizeMax) / 2.0);
 
     // for each light we try to merge with all other intersecting lights
     // that are in the same neighbourhood of the sorted list of lights
     // where neighbour are of near same values
-    for (std::vector<light>::iterator lightIt = lights.begin(); lightIt != lights.end(); ++lightIt)
+    for (LightVector::iterator lightIt = lights.begin(); lightIt != lights.end(); ++lightIt)
     {
         
         // already merged in a previous light
@@ -171,7 +171,7 @@ uint mergeLights(std::vector<light>& lights, std::vector<light>& newLights, cons
         // ignore too big, which is the same as ignoring low lum lights
         if (areaSizeMax < lightIt->_areaSize) break;
 
-        light lCurrent;
+        Light lCurrent;
         lightCopy(lCurrent, *lightIt);
         int x1 = lCurrent._x - border;
         int y1 = lCurrent._y - border;
@@ -190,7 +190,7 @@ uint mergeLights(std::vector<light>& lights, std::vector<light>& newLights, cons
             numMergedLight = 0;
 
             // could start at current light
-            for (std::vector<light>::iterator l = lights.begin(); l != lights.end(); ++l) {
+            for (LightVector::iterator l = lights.begin(); l != lights.end(); ++l) {
 
                 // ignore already merged or itself
                 if (l->_merged || l == lightIt ) continue;
@@ -253,13 +253,13 @@ uint mergeLights(std::vector<light>& lights, std::vector<light>& newLights, cons
 
     // count merged light
     uint numMergedLightTotal = 0;
-    for (std::vector<light>::iterator lCurrent = newLights.begin(); lCurrent != newLights.end(); ++lCurrent)
+    for (LightVector::iterator lCurrent = newLights.begin(); lCurrent != newLights.end(); ++lCurrent)
     {
         if (!lCurrent->_merged) numMergedLightTotal += lCurrent->_mergedNum;
     }
 
     // fill new array with light that wasn't merged at all
-    for (std::vector<light>::iterator lCurrent = lights.begin(); lCurrent != lights.end(); ++lCurrent)
+    for (LightVector::iterator lCurrent = lights.begin(); lCurrent != lights.end(); ++lCurrent)
     {
         // add remaining non merged lights
         if (!lCurrent->_merged && lCurrent->_mergedNum == 0){
@@ -281,7 +281,7 @@ uint mergeLights(std::vector<light>& lights, std::vector<light>& newLights, cons
 // we now have merged big area light, which are the zone with the most light possible
 // now we mush restrict those to smallest possible significant light possible
 // reducing it to a near directional light as much as possible
-uint selectLights(std::vector<light>& mergedLights, std::vector<light>& newLights, const uint width, const uint height, const double areaSizeMax, const double luminanceMaxLight, const  double envLuminanceSum)
+uint selectLights(LightVector& mergedLights, LightVector& newLights, const uint width, const uint height, const double areaSizeMax, const double luminanceMaxLight, const  double envLuminanceSum)
 {
     
     // discard or keep light too near an current light
@@ -289,7 +289,7 @@ uint selectLights(std::vector<light>& mergedLights, std::vector<light>& newLight
     uint numMergedLightTotal = 0;
 
 
-    for (std::vector<light>::iterator lightIt = mergedLights.begin(); lightIt != mergedLights.end(); ++lightIt)
+    for (LightVector::iterator lightIt = mergedLights.begin(); lightIt != mergedLights.end(); ++lightIt)
     {
         
         // already merged, we find in lights the light intersecting
@@ -299,14 +299,14 @@ uint selectLights(std::vector<light>& mergedLights, std::vector<light>& newLight
         if (lightIt->_mergedNum > 0)
         {
             
-            std::vector<light> &lights = lightIt->childrenLights;
+            LightVector &lights = lightIt->childrenLights;
             
             // sort to get most powerful light first
             std::sort(lights.begin(), lights.end());
 
 
             // take biggest and merge a bit
-            light lCurrent;
+            Light lCurrent;
             lightCopy(lCurrent, lights[0]);
             int x1 = lCurrent._x - border;
             int y1 = lCurrent._y - border;
@@ -314,7 +314,7 @@ uint selectLights(std::vector<light>& mergedLights, std::vector<light>& newLight
             int y2 = lCurrent._y + lCurrent._h + border;
 
             // reset children lights to start over merge process
-            for (std::vector<light>::iterator l = lights.begin()+1; l != lights.end(); ++l)
+            for (LightVector::iterator l = lights.begin()+1; l != lights.end(); ++l)
             {
                 l->_merged = false;
             }
@@ -322,7 +322,7 @@ uint selectLights(std::vector<light>& mergedLights, std::vector<light>& newLight
             do {
                 numMergedLight = 0;                
             
-                for (std::vector<light>::iterator l = lights.begin()+1; l != lights.end(); ++l)
+                for (LightVector::iterator l = lights.begin()+1; l != lights.end(); ++l)
                 {
 
                     // ignore already merged or itself
@@ -376,10 +376,10 @@ uint selectLights(std::vector<light>& mergedLights, std::vector<light>& newLight
         else
         {
             
-            //lightIt->_sortCriteria = lightIt->_lumAverage;
-            //lightIt->_sortCriteria = lightIt->_sum;
-            //newLights.push_back(*lightIt);
-            //numMergedLightTotal += lightIt->_mergedNum;
+            lightIt->_sortCriteria = lightIt->_lumAverage;
+            lightIt->_sortCriteria = lightIt->_sum;
+            newLights.push_back(*lightIt);
+            numMergedLightTotal += lightIt->_mergedNum;
             
         }
     }
