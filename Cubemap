@@ -1,27 +1,11 @@
 /* -*-c++-*- */
-
-
-#ifndef CUBEMAP_H
-#define CUBEMAP_H 1
+#pragma once
 
 #include "Math"
 #include <string>
 #include <vector>
 
-typedef unsigned int uint;
 typedef struct tiff TIFF;
-
-static Vec3f CubemapFace[6][3] = {
-    { Vec3f(0,0,-1), Vec3f(0,-1,0), Vec3f(1,0,0) },// x positif
-    { Vec3f(0,0,1), Vec3f(0,-1,0), Vec3f(-1,0,0) }, // x negatif
-
-    { Vec3f(1,0,0), Vec3f(0,0,1), Vec3f(0,1,0) },  // y positif
-    { Vec3f(1,0,0), Vec3f(0,0,-1),Vec3f(0,-1,0) }, // y negatif
-
-    { Vec3f(1,0,0), Vec3f(0,-1,0), Vec3f(0,0,1) },  // z positif
-    { Vec3f(-1,0,0), Vec3f(0,-1,0),Vec3f(0,0,-1) } // z negatif
-};
-
 
 struct Cubemap {
 
@@ -36,7 +20,7 @@ struct Cubemap {
         void init( uint size, uint sample );
         uint getSize() const { return _size; }
         void getSample( const Vec3f& dir, Vec3f& color ) const;
-        float texelCoordSolidAngle(uint faceIdx, float aU, float aV) const;
+        float texelCoordSolidAngle(float aU, float aV) const;
         void buildNormalizerSolidAngleCubemap(uint size, int fixup);
         bool load(const std::string& filename);
         void write( const std::string& filename ) const;
@@ -66,7 +50,7 @@ struct Cubemap {
     bool load(const std::string& name);
 
     void buildNormalizerSolidAngleCubemap(uint size, int fixupType);
-    float texelCoordSolidAngle( uint faceIndex, float u, float v) const;
+    float texelCoordSolidAngle( float u, float v) const;
 
     Cubemap* shFilterCubeMap(bool useSolidAngleWeighting, int fixupType, int outputCubemapSize = 256 );
 
@@ -92,5 +76,3 @@ struct Cubemap {
 
 
 };
-
-#endif

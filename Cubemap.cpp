@@ -17,7 +17,6 @@
 OIIO_NAMESPACE_USING
 
 void texelCoordToVectCubeMap(int face, float ui, float vi, uint size, float* dirResult, int fixup = 0);
-void vectToTexelCoordCubeMap(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v);
 
 Cubemap::Cubemap()
 {
@@ -171,35 +170,14 @@ void Cubemap::getSample(const Vec3f& direction, Vec3f& color ) const
 * surface of the sphere.
 **/
 
-static float AreaElement( float x, float y )
+float Cubemap::MipLevel::texelCoordSolidAngle( float aU, float aV) const
 {
-    return atan2(x * y, sqrt(x * x + y * y + 1));
+    return texelPixelSolidAngleCubeMap( aU, aV, _size );
 }
 
-float Cubemap::MipLevel::texelCoordSolidAngle(uint faceIdx, float aU, float aV) const
+float Cubemap::texelCoordSolidAngle(float aU, float aV) const
 {
-    // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
-    // (+ 0.5f is for texel center addressing)
-    float U = (2.0f * ((float)aU + 0.5f) / (float)_size ) - 1.0f;
-    float V = (2.0f * ((float)aV + 0.5f) / (float)_size ) - 1.0f;
-
-    // Shift from a demi texel, mean 1.0f / a_Size with U and V in [-1..1]
-    float InvResolution = 1.0f / _size;
-
-    // U and V are the -1..1 texture coordinate on the current face.
-    // Get projected area for this texel
-    float x0 = U - InvResolution;
-    float y0 = V - InvResolution;
-    float x1 = U + InvResolution;
-    float y1 = V + InvResolution;
-    float SolidAngle = AreaElement(x0, y0) - AreaElement(x0, y1) - AreaElement(x1, y0) + AreaElement(x1, y1);
-
-    return SolidAngle;
-}
-
-float Cubemap::texelCoordSolidAngle(uint faceIdx, float aU, float aV) const
-{
-    return _levels[0].texelCoordSolidAngle(faceIdx, aU, aV);
+    return _levels[0].texelCoordSolidAngle(aU, aV);
 }
 
 
@@ -225,7 +203,7 @@ void Cubemap::MipLevel::buildNormalizerSolidAngleCubemap(uint size, int fixup)
             for(u=0; u < size; u++) {
 
                 texelCoordToVectCubeMap(iCubeFace, (float)u, (float)v, size, texelPtr, fixup);
-                *(texelPtr + 3) = texelCoordSolidAngle(iCubeFace, (float)u, (float)v);
+                *(texelPtr + 3) = texelCoordSolidAngle( (float)u, (float)v);
                 texelPtr += _samplePerPixel;
 
             }
@@ -1251,49 +1229,6 @@ void texelCoordToVectCubeMap(int face, float ui, float vi, uint size, float* dir
     dirResult[2] = res[2];
 }
 
-
-// major axis
-// direction     target                              sc     tc    ma
-// ----------    ---------------------------------   ---    ---   ---
-//  +rx          GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT   -rz    -ry   rx
-//  -rx          GL_TEXTURE_CUBE_MAP_NEGATIVE_X_EXT   +rz    -ry   rx
-//  +ry          GL_TEXTURE_CUBE_MAP_POSITIVE_Y_EXT   +rx    +rz   ry
-//  -ry          GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_EXT   +rx    -rz   ry
-//  +rz          GL_TEXTURE_CUBE_MAP_POSITIVE_Z_EXT   +rx    -ry   rz
-//  -rz          GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_EXT   -rx    -ry   rz
-// s   =   ( sc/|ma| + 1 ) / 2
-// t   =   ( tc/|ma| + 1 ) / 2
-
-void vectToTexelCoordCubeMap(const Vec3f& direction, uint size, int& faceIndex, float& u, float& v) {
-
-    int bestAxis = 0;
-    if ( fabs(direction[1]) > fabs(direction[0]) ) {
-        bestAxis = 1;
-        if ( fabs(direction[2]) > fabs(direction[1]) )
-            bestAxis = 2;
-    } else if ( fabs(direction[2]) > fabs(direction[0]) )
-        bestAxis = 2;
-
-    // select the index of cubemap face
-    faceIndex = bestAxis*2 + ( direction[bestAxis] > 0 ? 0 : 1 );
-    float bestAxisValue = direction[bestAxis];
-    float denom = fabs( bestAxisValue );
-
-    //float maInv = 1.0/denom;
-    Vec3f dir = direction * 1.0/denom;
-
-    float sc = CubemapFace[faceIndex][0] * dir;
-    float tc = CubemapFace[faceIndex][1] * dir;
-    float ppx = (sc + 1.0) * 0.5 * (size - 1); // width == height
-    float ppy = (tc + 1.0) * 0.5 * (size - 1); // width == height
-
-    // u = int( floor( ppx ) ); // center pixel
-    // v = int( floor( ppy ) ); // center pixel
-    u = ppx;
-    v = ppy;
-
-}
-
 void Cubemap::getSampleLOD(float lod, const Vec3f& direction, Vec3f& color ) const {
     float l0 = floor( lod );
     float l1 = ceil( lod );
@@ -1311,7 +1246,7 @@ void Cubemap::MipLevel::getSample(const Vec3f& direction, Vec3f& color ) const {
     int faceIndex;
 
     int size = getSize();
-    vectToTexelCoordCubeMap(direction, size, faceIndex, u,v );
+    vectToTexelCoordCubeMap(direction, size, u,v, faceIndex);
 
 
     const float ii = clamp(u - 0.5f, 0.0f, size - 1.0f);

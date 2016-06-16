@@ -1,0 +1,46 @@
+/* -*-c++-*- */
+#pragma once
+
+#include <vector>
+#include "Math"
+
+struct Light;
+typedef std::vector<Light> LightVector;
+
+struct Light {
+
+    Vec2d _centroidPosition;
+
+    // light Area
+    int _w,_h;
+    int _x,_y;
+
+    bool _merged;
+    int _mergedNum;
+
+    double _areaSize;
+    double _sum;
+
+    // average
+    double _lumAverage;
+    double _rAverage, _gAverage, _bAverage;
+
+    //value
+    double _luminancePixel;
+
+
+    double _variance;
+    double _colorAverage;
+    double _luminanceAverage;
+
+    double _sortCriteria;
+
+    LightVector childrenLights;
+
+    // sort facility
+    bool operator< (const Light &rhs) const
+    {
+        return _sortCriteria < rhs._sortCriteria ;
+    }
+
+};

@@ -1,14 +1,9 @@
 /* -*-c++-*- */
-#pragma once
-
-#ifndef EXTRACT_LIGHTS_MERGE_H
-#define EXTRACT_LIGHTS_MERGE_H 1
-
 
 /**
  * convert Env map Regions to Lights
- */ 
-void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights, const float *rgba, const uint width, const uint height, const uint nc)
+ */
+void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights, const float *rgba, const int width, const int height, const int nc)
 {
     // convert region into lights
     for (SatRegionVector::const_iterator region = regions.begin(); region != regions.end(); ++region)
@@ -46,7 +41,7 @@ void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights
         l._sortCriteria = l._areaSize;
         //l._sortCriteria = l._lumAverage;
 
-        const uint i = static_cast<uint>(l._centroidPosition._y*width + l._centroidPosition._x);
+        const uint i = static_cast<uint>(l._centroidPosition[1]*width + l._centroidPosition[0]);
 
         double r = rgba[i*nc + 0];
         double g = rgba[i*nc + 1];
@@ -79,28 +74,28 @@ void mergeLight(Light& lightParent, Light& lightChild)
 
 
     lightParent.childrenLights.push_back(lightChild);
-                    
+
     //lightChild._sortCriteria = lightChild._lumAverage;
     //lightChild._sortCriteria = lightChild._sum;
     lightChild._sortCriteria = lightChild._areaSize;
-            
+
     // light is bigger, better candidate to main light
     lightParent._mergedNum++;
-    
+
     lightParent._sum += lightChild._sum;
 
     double newAreaSize = lightParent._areaSize+lightChild._areaSize;
 
     double ratioParent = lightParent._areaSize / newAreaSize;
     double ratioChild = lightChild._areaSize / newAreaSize;
-    
-    lightParent._rAverage = lightParent._rAverage*ratioParent + lightChild._rAverage*ratioChild;        
-    lightParent._gAverage = lightParent._gAverage*ratioParent + lightChild._gAverage*ratioChild;        
-    lightParent._bAverage = lightParent._bAverage*ratioParent + lightChild._bAverage*ratioChild;        
-    
-    lightParent._areaSize = newAreaSize;    
+
+    lightParent._rAverage = lightParent._rAverage*ratioParent + lightChild._rAverage*ratioChild;
+    lightParent._gAverage = lightParent._gAverage*ratioParent + lightChild._gAverage*ratioChild;
+    lightParent._bAverage = lightParent._bAverage*ratioParent + lightChild._bAverage*ratioChild;
+
+    lightParent._areaSize = newAreaSize;
     lightParent._lumAverage = lightParent._sum / newAreaSize;
-    
+
 }
 
 /*
@@ -108,7 +103,7 @@ void mergeLight(Light& lightParent, Light& lightChild)
  *  we copy only parts
  */
 void lightCopy(Light &lDest, const Light &lSrc)
-{    
+{
     lDest._merged = false;
     lDest._mergedNum = 0;
     lDest._x = lSrc._x;
@@ -131,13 +126,13 @@ void lightCopy(Light &lDest, const Light &lSrc)
 bool intersectLightAgainstLights2D(const LightVector &lights, const Light &lightCandidate, int border)
 {
     if (lights.empty()) return true;
-    
-    
+
+
     int x1 = lightCandidate._x - border;
     int y1 = lightCandidate._y - border;
     int x2 = lightCandidate._x + lightCandidate._w + border;
     int y2 = lightCandidate._y + lightCandidate._h + border;
-    
+
     for (LightVector::const_iterator l = lights.begin(); l != lights.end(); ++l)
     {
         if (!(l->_y > y2 || l->_y+l->_h < y1 || l->_x > x2 || l->_x+l->_w < x1))
@@ -145,8 +140,8 @@ bool intersectLightAgainstLights2D(const LightVector &lights, const Light &light
             return true;
         }
     }
-        
 
+    return false;
 }
 
 /**
@@ -163,11 +158,11 @@ uint mergeLights(LightVector& lights, LightVector& newLights, const uint width, 
     // where neighbour are of near same values
     for (LightVector::iterator lightIt = lights.begin(); lightIt != lights.end(); ++lightIt)
     {
-        
+
         // already merged in a previous light
         // we do nothing
         if (lightIt->_merged) continue;
-        
+
         // ignore too big, which is the same as ignoring low lum lights
         if (areaSizeMax < lightIt->_areaSize) break;
 
@@ -177,14 +172,14 @@ uint mergeLights(LightVector& lights, LightVector& newLights, const uint width, 
         int y1 = lCurrent._y - border;
         int x2 = lCurrent._x + lCurrent._w + border;
         int y2 = lCurrent._y + lCurrent._h + border;
-       
+
         uint numMergedLight;
-       
+
         // current area Size will change when getting merges
         // we store initial values to prevent merging
         // with light too low
         const double areaSizeCurrent = lCurrent._areaSize;
-        
+
         do {
 
             numMergedLight = 0;
@@ -225,10 +220,10 @@ uint mergeLights(LightVector& lights, LightVector& newLights, const uint width, 
                     y1 = lCurrent._y - border;
                     x2 = lCurrent._x + lCurrent._w + border;
                     y2 = lCurrent._y + lCurrent._h + border;
-                                
+
                     numMergedLight++;
                 }
-            
+
             }
 
             // if we're merging we're changing borders
@@ -240,9 +235,9 @@ uint mergeLights(LightVector& lights, LightVector& newLights, const uint width, 
 
             //lCurrent._sortCriteria = lCurrent._lumAverage;
             lCurrent._sortCriteria = lCurrent._areaSize;
-            
+
             newLights.push_back(lCurrent);
-            
+
             // add new light to current one too
             // to allow for merged light merge ?
             //lights.push_back(lCurrent);
@@ -283,7 +278,7 @@ uint mergeLights(LightVector& lights, LightVector& newLights, const uint width, 
 // reducing it to a near directional light as much as possible
 uint selectLights(LightVector& mergedLights, LightVector& newLights, const uint width, const uint height, const double areaSizeMax, const double luminanceMaxLight, const  double envLuminanceSum)
 {
-    
+
     // discard or keep light too near an current light
     const uint border = 1;//static_cast <uint> (sqrt (areaSizeMax) / 2.0);
     uint numMergedLightTotal = 0;
@@ -291,16 +286,16 @@ uint selectLights(LightVector& mergedLights, LightVector& newLights, const uint 
 
     for (LightVector::iterator lightIt = mergedLights.begin(); lightIt != mergedLights.end(); ++lightIt)
     {
-        
+
         // already merged, we find in lights the light intersecting
         uint numMergedLight = 0;
         // if light "splittable"
         // and light already over ratio, need to cut it
         if (lightIt->_mergedNum > 0)
         {
-            
+
             LightVector &lights = lightIt->childrenLights;
-            
+
             // sort to get most powerful light first
             std::sort(lights.begin(), lights.end());
 
@@ -318,75 +313,73 @@ uint selectLights(LightVector& mergedLights, LightVector& newLights, const uint 
             {
                 l->_merged = false;
             }
- 
+
             do {
-                numMergedLight = 0;                
-            
+                numMergedLight = 0;
+
                 for (LightVector::iterator l = lights.begin()+1; l != lights.end(); ++l)
                 {
 
                     // ignore already merged or itself
                     if (l->_merged ) continue;
-                                
+
                     // pick only smallest & near lights , grow until not bigger than areaSize
                     if (areaSizeMax <= l->_areaSize) {
                         break;
                     }
 
                     bool intersect2D = !(l->_y > y2 || l->_y+l->_h < y1 || l->_x > x2 || l->_x+l->_w < x1);
-                
+
                     if (intersect2D && intersectLightAgainstLights2D(lCurrent.childrenLights, *l, border))
                     {
-                        
+
                         mergeLight(lCurrent, *l);
 
                         x1 = lCurrent._x - border;
                         y1 = lCurrent._y - border;
                         x2 = lCurrent._x + lCurrent._w + border;
                         y2 = lCurrent._y + lCurrent._h + border;
-                    
+
                         // if too big, stop
                         if (areaSizeMax <= lCurrent._areaSize) {
                             break;
                         }
-                
+
                         // if too luminous, stop
-                        // doesn't work 
+                        // doesn't work
                         //if (luminanceMaxLight < lCurrent._sum) {
                         //    break;
                         //}
 
                         numMergedLight++;
                     }
-                
-                
+
+
                 }
             } while (numMergedLight > 0);
 
-                
+
             //lCurrent._sortCriteria = lCurrent._lumAverage;
             //lCurrent._sortCriteria = lCurrent._variance;
             //lCurrent._sortCriteria = lCurrent._areaSize;
             lCurrent._sortCriteria = lCurrent._sum;
             newLights.push_back(lCurrent);
-            
+
             numMergedLightTotal += lCurrent._mergedNum;
-                        
+
         }
         else
         {
-            
+
             lightIt->_sortCriteria = lightIt->_lumAverage;
             lightIt->_sortCriteria = lightIt->_sum;
             newLights.push_back(*lightIt);
             numMergedLightTotal += lightIt->_mergedNum;
-            
+
         }
     }
 
 
     return numMergedLightTotal;
-    
-}
 
-#endif //EXTRACT_LIGHTS_MERGE_H
+}

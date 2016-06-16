@@ -1,12 +1,10 @@
 /* -*-c++-*- */
-
 #pragma once
 
-#ifndef SUMMED_AREA_TABLE_REGION_H
-#define SUMMED_AREA_TABLE_REGION_H 1
+#include "Math"
+#include <vector>
 
-#include "ExtractLightsVariance"
-#include "SummedAreaTable"
+class SummedAreaTable;
 
 /**
  * A subregion in a SummedAreaTable.
@@ -18,10 +16,10 @@ public:
     const SummedAreaTable* _sat;
 
     // SatRegion non-discrete center
-    Double2 coord;
+    Vec2d coord;
 
     int _x, _y;
-    uint _w, _h;
+    int _w, _h;
 
     // respectively for mean, variance, skewness, kurtosis
     double _sum, _sum1, _sum2, _sum3,_sum4, _sum5;
@@ -49,7 +47,6 @@ public:
     double getVariance() const
     {
         const double mean =  getMean();
-        //return (_sum2 - (_sum*_sum)/ areaSize())/ areaSize();
         return (_sum2 / areaSize()) - (mean*mean);
     }
 
@@ -84,38 +81,13 @@ public:
     //Two Stage Importance Sampling for Direct Lighting
     // page 4, equation 2
     // Cline etAll 2006
-    double getRegionWeight() const
-    {
-
-        double f00 = _sat->I1(_x,_y);
-        double f10 = _sat->I1(_x+_w,_y);
-        double f01 = _sat->I1(_x,_y+_h);
-        double f11 = _sat->I1(_x+_w,_y+_h);
-
-        return _sum * (f00 + f10 + f01 + f11) * 0.25;
-    }
+    double getRegionWeight() const;
 
     //Two Stage Importance Sampling for Direct Lighting
     // page 4, equation 3
     // Cline etAll 2006
-    double getCornerDeviation() const
-    {
-        const Double2 c = centroid();
-        const double fav = _sat->I1(c._x,c._y);
+    double getCornerDeviation() const;
 
-
-        double f00fav = _sat->I1(_x,_y) - fav;
-        double f10fav = _sat->I1(_x+ _w,_y) - fav;
-        double f01fav = _sat->I1(_x,_y+_h) - fav;
-        double f11fav = _sat->I1(_x+ _w,_y+_h) - fav;
-
-        f00fav *= f00fav;
-        f10fav *= f10fav;
-        f01fav *= f01fav;
-        f11fav *= f11fav;
-
-        return 0.5 * sqrt(f00fav + f10fav + f01fav + f11fav);
-    }
     //Two Stage Importance Sampling for Direct Lighting
     // page 4, equation 3
     // Cline etAll 2006
@@ -127,60 +99,10 @@ public:
         // deviation of the f values at the corners of R:
 
         return getCornerDeviation() * getSum() * areaSize();
-
     };
 
+    void create(const int x, const int y, const uint w, const uint h, const SummedAreaTable* sat);
 
-
-
-    void create(const int x, const int y, const uint w, const uint h, const SummedAreaTable* sat)
-    {
-        _x = x; _y = y; _w = w; _h = h; _sat = sat;
-
-            _sum = _sat->sum(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-            _r = _sat->sumR(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-            _g = _sat->sumG(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-            _b = _sat->sumB(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-
-            _sum2 = _sat->sum2(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-            _sum3 = _sat->sum3(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-            _sum4 = _sat->sum4(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-            _sum5 = _sat->sum5(x,       y,
-                             x+(w-1), y,
-                             x+(w-1), y+(h-1),
-                             x,       y+(h-1));
-
-
-
-    }
 
 //#define VARIANCE_MIN 1
 #ifndef VARIANCE_MIN
@@ -197,7 +119,7 @@ public:
 
     void split_w(SatRegion& A) const
     {
-        for (uint  w = 1; w <= _w; ++w)
+        for (int  w = 1; w <= _w; ++w)
         {
             A.create(_x, _y, w, _h, _sat);
 
@@ -209,7 +131,7 @@ public:
 
     void split_h(SatRegion& A) const
     {
-        for (uint h = 1; h <= _h; ++h)
+        for (int h = 1; h <= _h; ++h)
         {
             A.create(_x, _y, _w, h, _sat);
 
@@ -246,7 +168,7 @@ public:
 
         SatRegion B;
         uint minSplt;
-        for (uint  w = 1; w <= _w; ++w)
+        for (int  w = 1; w <= _w; ++w)
         {
             A.create(_x, _y, w, _h, _sat);
             B.create(_x + w-1, _y, _w - w, _h, _sat);
@@ -254,7 +176,7 @@ public:
             // maximum of the two sub-regions' variances is minimized.
             maxV = std::max(A.splitCriteria(), B.splitCriteria());
 
-            if(minV > maxV){
+            if(minV > maxV) {
                 minV = maxV;
                 minSplt = w;
             }
@@ -271,7 +193,7 @@ public:
 
         SatRegion B;
         uint minSplt;
-        for (uint h = 1; h <= _h; ++h)
+        for (int h = 1; h <= _h; ++h)
         {
             A.create(_x, _y, _w, h, _sat);
             B.create(_x, _y + h-1, _w, _h - h, _sat);
@@ -308,12 +230,9 @@ public:
         B.create(_x, _y + (A._h-1), _w, _h - A._h, _sat);
     }
 
-    Double2 centroid() const
+    Vec2d centroid() const
     {
-        Double2 c;
-        c._x = _x + _w*0.5;
-        c._y = _y + _h*0.5;
-        return c;
+        return Vec2d( _x, _y ) + Vec2d( _w, _h) * 0.5;
     }
 
     double areaSize() const
@@ -323,5 +242,5 @@ public:
 
 
 };
+
 typedef std::vector<SatRegion> SatRegionVector;
-#endif // SUMMED_AREA_TABLE_REGION_H
