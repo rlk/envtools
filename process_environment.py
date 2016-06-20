@@ -120,7 +120,7 @@ class ProcessEnvironment(object):
         self.textures = {}
         self.prefilterGPU = None
 
-        self.approximate_directional_lights = kwargs.get("approximate_directional_lights", False)
+        self.approximate_directional_lights = kwargs.get("approximate_directional_lights", True)
 
         self.compression_level = 9
 
@@ -471,7 +471,16 @@ class ProcessEnvironment(object):
         print output_log
 
     def extract_lights(self):
-        cmd = "{} {}".format(extractLights_cmd, self.panorama_highres)
+
+        # compute it one time for panorama
+        img_size_x = 1024
+        img_size_y = 512
+        panorama_smaller = os.path.join(self.output_directory, "pano_small_{}.tif".format(image_size_x))
+        cmd = "oiiotool {} --resize {}x{} -o {}".format(
+            self.panorama_highres, image_size_x, image_size_y, file_basename)
+        execute_command(cmd, verbose=False, print_command=True)
+
+        cmd = "{} {}".format(extractLights_cmd, panorama_smaller)
         output_log = execute_command(cmd, verbose=False, print_command=True)
         print output_log
         self.lights = output_log

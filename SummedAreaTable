@@ -31,8 +31,41 @@ protected:
     std::vector<double> _g;
     std::vector<double> _b;
 
+    // error reducing values
+    double _minLum, _maxLum;
+    double _minPonderedLum, _maxPonderedLum;
+    double _minR, _maxR;
+    double _minG, _maxG;
+    double _minB, _maxB;
+    double _weightAccum;
+        
 public:
+    double getMaxLum() const 
+    {
+        return _maxLum;        
+    }
 
+    double getMaxPonderedLum() const 
+    {
+        return _maxPonderedLum;        
+    }
+    double getWeightAccumulation() const
+    {
+        return _weightAccum;
+    }    
+    double getMaxR() const 
+    {
+        return _maxR;        
+    }
+    double getMaxG() const 
+    {
+        return _maxG;        
+    }
+    double getMaxB() const 
+    {
+        return _maxB;        
+    }
+    
     double I(const int x, const int y) const
     {
         if (x < 0 || y < 0) return 0.0;

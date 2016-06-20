@@ -15,6 +15,10 @@ struct Light {
     int _w,_h;
     int _x,_y;
 
+    // if one values is out of bound
+    // flag the light as error
+    bool _error;
+    
     bool _merged;
     int _mergedNum;
 

@@ -130,7 +130,8 @@ void outputJSON(const LightVector &lights, uint height, uint width, uint imageAr
         std::cout << " \"color\": [" << rCol << ", " << gCol << ", " << bCol << "], ";
         std::cout << " \"area\": {\"x\":" << x << ", \"y\":" << y << ", \"w\":" << w << ", \"h\":" << h << "}, ";
         std::cout << " \"sum\": " << (l->_sum ) << ", ";
-        std::cout << " \"variance\": " << (l->_variance ) << " ";
+        std::cout << " \"variance\": " << (l->_variance ) << ", ";
+        std::cout << " \"error\": " << (l->_error ? 1 : 0 ) << " ";
         std::cout << " }" << std::endl;
 
         if (i < lightNum - 1){
@@ -244,7 +245,7 @@ int main(int argc, char** argv)
         const double luminanceMaxLight = ratioLuminanceLight*luminanceSum;
 
         // And he saw that light was good, and separated light from darkness
-        createLightsFromRegions(regions, lights, rgba, width, height, nc);
+        createLightsFromRegions(regions, lights, rgba, width, height, nc, lum_sat);
 
         // sort lights
         // the smaller, the more powerful luminance
