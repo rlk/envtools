@@ -43,7 +43,7 @@ void SummedAreaTable::createLum(float* rgb, const uint width, const uint height,
     double weightAccum = 0.0;
 
     // solid angle for 1 pixel on equi map
-    double weight = (4.0 * PI) / ((double)(width * height));
+    double weight = (4.0 * PI) / ((double)(imgSize));
 
     Vec3f d;
     uint faceIdx;
@@ -60,15 +60,17 @@ void SummedAreaTable::createLum(float* rgb, const uint width, const uint height,
     _maxG = DBL_MIN;
     _minB = DBL_MAX;
     _maxB = DBL_MIN;
+    _sum = 0.0;
     
     for (uint y = 0; y < height; ++y) {
-        const double posY = (double)y / (double)height;
+        
+        const double posY = (double)(y+1.0) / (double)(height+1.0);
 
         // the latitude-longitude format overrepresents the area of regions near the poles.
         // To compensate for this, the pixels of the probe image
         // should first be scaled by cosφ.
         // (φ == 0 at middle height of image input)
-        const double solidAngle = cos(PI* (posY - 0.5));
+        const double solidAngle = cos(PI* (posY - 0.5)) * weight;
 
         for (uint x = 0; x < width;  ++x) {
 
@@ -80,7 +82,7 @@ void SummedAreaTable::createLum(float* rgb, const uint width, const uint height,
 
             double ixy = luminance(r,g,b);
 
-            // update Min/Max before pondering
+            // update Min/Max before pondering            
             _minLum = std::min(ixy, _minLum);
             _maxLum = std::max(ixy, _maxLum);
             
@@ -93,13 +95,13 @@ void SummedAreaTable::createLum(float* rgb, const uint width, const uint height,
             _minB = std::min(b, _minB);
             _maxB = std::max(b, _maxB);
 
-#define _PONDER_REAL
+#define _PONDER_REAL 
 #ifdef _PONDER_REAL
 
             
-            r *= solidAngle;
-            g *= solidAngle;
-            b *= solidAngle;
+            r *= solidAngle* imgSize;
+            g *= solidAngle* imgSize;
+            b *= solidAngle* imgSize;
             
             // ixy = luminance(r,g,b);
             // pondering luminance for unpondered colors makes more sense
@@ -140,32 +142,33 @@ void SummedAreaTable::createLum(float* rgb, const uint width, const uint height,
             //weightAccum += weight;
             //weightAccum += 1.0;
             weightAccum += solidAngle;
-
+            _sum += ixy;
+            
         }
     }
-    // store for latesr use.
+    // store for later use.
     _weightAccum = weightAccum;
     
     bool normalize = true;
 
+    
     if (normalize){
 
         // normalize in order our image Accumulation exactly match 4 PI.
         const double normalizer = (4.0 * PI) / weightAccum;
 
-        for (uint y = 0; y < height; ++y) {
-            for (uint x = 0; x < width;  ++x) {
+        _sum *= normalizer;
+        
 
-                const uint i = y*width + x;
+        for (uint i = 0; i < imgSize; ++i) {
 
-                _sat[i] *= normalizer;
-
-                _minPonderedLum = std::min(_sat[i], _minPonderedLum);
-                _maxPonderedLum = std::max(_sat[i], _maxPonderedLum);
-            }
+            _sat[i] *= normalizer;
+            
+            _minPonderedLum = std::min(_sat[i], _minPonderedLum);
+            _maxPonderedLum = std::max(_sat[i], _maxPonderedLum);
+            
         }
     }
-
 
 #define ENHANCE_PRECISION 1
 #ifdef ENHANCE_PRECISION
@@ -179,16 +182,14 @@ void SummedAreaTable::createLum(float* rgb, const uint width, const uint height,
         const double rangeG = _maxG - _minG;
         const double rangeB = _maxB - _minB;
         
-        for (uint y = 0; y < height; ++y) {
-            for (uint x = 0; x < width;  ++x) {
-                const uint i = y*width + x;
-
-                _sat[i] = ((_sat[i] - _minPonderedLum) / rangePonderedLum) * 0.5;
+        for (uint i = 0; i< imgSize; ++i) {
+                
+            _sat[i] = ((_sat[i] - _minPonderedLum) / rangePonderedLum) * 0.5;
             
-                _r[i]  = ((_r[i] - _minR) / rangeR) * 0.5;
-                _g[i]  = ((_g[i] - _minG) / rangeG) * 0.5;
-                _b[i]  = ((_b[i] - _minB) / rangeB) * 0.5;
-            }
+            _r[i]  = ((_r[i] - _minR) / rangeR) * 0.5;
+            _g[i]  = ((_g[i] - _minG) / rangeG) * 0.5;
+            _b[i]  = ((_b[i] - _minB) / rangeB) * 0.5;
+            
         }
 #endif
     

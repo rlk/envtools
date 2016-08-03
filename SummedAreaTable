@@ -38,11 +38,18 @@ protected:
     double _minG, _maxG;
     double _minB, _maxB;
     double _weightAccum;
-        
+    double _sum;
+
+    
 public:
     double getMaxLum() const 
     {
         return _maxLum;        
+    }
+    
+    double getSum() const 
+    {
+        return _sum;        
     }
 
     double getMaxPonderedLum() const 

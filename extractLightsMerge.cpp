@@ -10,8 +10,10 @@ void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights
     const double maxB = lumSat.getMaxB();
     const double maxLum = lumSat.getMaxPonderedLum();
     const double weigth = lumSat.getWeightAccumulation();
-    
-        
+
+    const uint imgSize = width*height;
+    double weight = (4.0 * PI) / ((double)(imgSize));
+
     // convert region into lights
     for (SatRegionVector::const_iterator region = regions.begin(); region != regions.end(); ++region)
     {
@@ -34,7 +36,8 @@ void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights
         
         l._sortCriteria = l._areaSize;
         //l._sortCriteria = l._lumAverage;
-
+        
+        
         const uint i = static_cast<uint>(l._centroidPosition[1]*width + l._centroidPosition[0]);
 
         // compute area values, as SAT introduce precision errors
@@ -44,9 +47,9 @@ void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights
         double g = rgba[i*nc + 1];
         double b = rgba[i*nc + 2];
         {            
-            double y = (double)l._centroidPosition[0] / (double)height;
-            double solidAngle = cos(PI* (y - 0.5));
-            l._luminancePixel = (4.0 * PI * luminance(r,g,b) * solidAngle) / weigth;
+            double y = ((double)l._centroidPosition[0] + 1.0) / (double)(height + 1);
+            double solidAngle = cos(PI* (y - 0.5)) * weight;
+            l._luminancePixel = luminance(r,g,b) * solidAngle;
         }
         
         double rSum = 0.0;
@@ -56,8 +59,8 @@ void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights
         
         for (int y1 = l._y; y1 < l._y+l._h; ++y1)
         {
-            const double posY = (double)y1 / (double)height;
-            const double cosLat = cos(PI* (posY - 0.5));
+            const double posY = ((double)y1 + 1.0) / (double)(height + 1.0);
+            const double solidAngle = cos(PI* (posY - 0.5)) * weight;
             
             for (int x1 = l._x; x1 < l._x+l._w;  ++x1)
             {
@@ -67,25 +70,26 @@ void createLightsFromRegions(const SatRegionVector& regions, LightVector& lights
                 g = rgba[i + 1];
                 b = rgba[i + 2];
                 
-                lumSum += (4.0 * PI * luminance(r,g,b) * cosLat) / weigth;
+                lumSum +=  luminance(r,g,b) * solidAngle;
                 
-                rSum += r*cosLat;
-                gSum += g*cosLat;
-                bSum += b*cosLat;               
+                rSum += r;
+                gSum += g;
+                bSum += b;               
                 
             }
         }
         
         // luminosity
         //l._sum = region->getSum();
-        l._sum = lumSum;
+        lumSum *= (4.0 * PI)  / weigth;
+        l._sum = lumSum ;
 
         //l._lumAverage = region->getMean();
         l._lumAverage = lumSum / l._areaSize;
 
         l._variance = ((l._sum*l._sum) / l._areaSize) - (l._lumAverage*l._lumAverage);
 
-        // Colors
+        // Colors        
         l._rAverage = rSum / l._areaSize;
         l._gAverage = gSum / l._areaSize;
         l._bAverage = bSum / l._areaSize;

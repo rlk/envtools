@@ -475,9 +475,9 @@ class ProcessEnvironment(object):
         # compute it one time for panorama
         img_size_x = 1024
         img_size_y = 512
-        panorama_smaller = os.path.join(self.output_directory, "pano_small_{}.tif".format(image_size_x))
+        panorama_smaller = os.path.join(self.output_directory, "pano_small_{}.tif".format(img_size_x))
         cmd = "oiiotool {} --resize {}x{} -o {}".format(
-            self.panorama_highres, image_size_x, image_size_y, file_basename)
+            self.panorama_highres, img_size_x, img_size_y, panorama_smaller)
         execute_command(cmd, verbose=False, print_command=True)
 
         cmd = "{} {}".format(extractLights_cmd, panorama_smaller)
@@ -603,7 +603,7 @@ def define_arguments():
     parser.add_argument("--fixedge", action="store_true", help="fix edge for cubemap")
     parser.add_argument("--pretty", action="store_true", help="generate a config file pretty for human")
     parser.add_argument("--approximateDirectionalLights", action="store_true",
-                        dest="approximate_directional_lights", help="generate directional lights from environment")
+                        dest="approximate_directional_lights", help="generate directional lights from environment", default="approximate_directional_lights")
 
     return parser
 

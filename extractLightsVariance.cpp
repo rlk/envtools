@@ -27,10 +27,7 @@ OIIO_NAMESPACE_USING
 #include "SummedAreaTableRegion"
 
 #include "extractLightsMerge.cpp"
-
-#if !defined(NDEBUG)
 #include "extractLightsVarianceDebug.cpp"
-#endif
 
 /**
  * Recursively split a region r and append new subregions
@@ -129,7 +126,8 @@ void outputJSON(const LightVector &lights, uint height, uint width, uint imageAr
         std::cout << " \"luminosity\": " << (l->_lumAverage) << ", ";
         std::cout << " \"color\": [" << rCol << ", " << gCol << ", " << bCol << "], ";
         std::cout << " \"area\": {\"x\":" << x << ", \"y\":" << y << ", \"w\":" << w << ", \"h\":" << h << "}, ";
-        std::cout << " \"sum\": " << (l->_sum ) << ", ";
+        std::cout << " \"sum\": " << l->_sum << ", ";
+        std::cout << " \"lum_ratio\": " << (l->_sum / luminanceSum ) << ", ";
         std::cout << " \"variance\": " << (l->_variance ) << ", ";
         std::cout << " \"error\": " << (l->_error ? 1 : 0 ) << " ";
         std::cout << " }" << std::endl;
@@ -150,7 +148,7 @@ void outputJSON(const LightVector &lights, uint height, uint width, uint imageAr
 ////////////////////////////////////////////////
 static int usage(const std::string& name)
 {
-    std::cerr << "Usage: " << name << " [-a Areasize] [-r ratioLight] [-n numCuts] file.hdr" << std::endl;
+    std::cerr << "Usage: " << name << " [-a Areasize] [-r ratioLight] [-n numCuts] [-d] file.hdr" << std::endl;
     return 1;
 }
 
@@ -173,13 +171,16 @@ int main(int argc, char** argv)
     int numCuts = 8;// number of division squared of the envmap of same lighting power
 
     int c;
-    while ((c = getopt(argc, argv, "a:r:n")) != -1)
+    bool debug = false;
+    
+    while ((c = getopt(argc, argv, "a:r:n:d")) != -1)
     {
         switch (c)
         {
         case 'a': ratioAreaSizeMax = atof(optarg); break;
         case 'r': ratioLuminanceLight = atof(optarg); break;
         case 'n': numCuts = atoi(optarg); break;
+        case 'd': debug = true; break;
 
         default: return usage(argv[0]);
         }
@@ -237,11 +238,12 @@ int main(int argc, char** argv)
         // to relative to environment at hand value.
         // From ratio to pixel squared area
         /// Light Max luminance in percentage
-        double luminanceSum = lum_sat.sum(0,0,
+        double luminanceSum = lum_sat.getSum();
+        lum_sat.sum(0,0,
                                           width-1,0,
                                           width-1,height-1,
                                           0,height-1);
-
+        
         const double luminanceMaxLight = ratioLuminanceLight*luminanceSum;
 
         // And he saw that light was good, and separated light from darkness
@@ -309,11 +311,12 @@ int main(int argc, char** argv)
         outputJSON(mainLights, height, width, imageAreaSize, luminanceSum);
 
 
-#if !defined(NDEBUG)
 
-        debugDrawLight(regions, lights, mainLights, rgba, width, height, nc);
+        if (debug){            
+            debugDrawLight(regions, lights, mainLights, rgba, width, height, nc);
+        }
+        
 
-#endif // !defined(NDEBUG)
 
     }
     else{
