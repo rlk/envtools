@@ -167,7 +167,7 @@ class ProcessEnvironment(object):
                 max_values = s[s.find(": ") + 2: s.find("(") - 1].split(' ')
                 max_value = max(map(float, max_values))
 
-        cmd = "oiiotool -v {} --clamp:max={} -o {}".format(input, max_value, output)
+        cmd = "oiiotool -v {} --clamp:max={} --clamp:min=0 -o {}".format(input, max_value, output)
         execute_command(cmd)
 
     def compress(self):
