@@ -1,15 +1,9 @@
 /* -*-c++-*- */
-#pragma once
-
-#ifndef EXTRACT_LIGHTS_VARIANCE_DEBUG_H
-#define EXTRACT_LIGHTS_VARIANCE_DEBUG_H 1
-
-#include <vector>
 
 #include "Math"
-
-#include "ExtractLightsVariance"
+#include "Light"
 #include "SummedAreaTableRegion"
+#include <vector>
 
 
 uchar debugColorR;
@@ -33,19 +27,17 @@ void drawDebug(uchar* d, const int ci, const uint nc)
 /**
  * Draw a region
  */
-void drawRegions(uchar* rgba, uint width, uint height, const std::vector<satRegion>& regions, uint nc)
+void drawRegions(uchar* rgba, int width, int height, const SatRegionVector& regions, uint nc)
 {
     uint pixelPos = 0;
-    for (uint i = 0; i < height; ++i)
+    for (int i = 0; i < height; ++i)
     {
-        for (uint p = 0; p < width; ++p)
+        for (int p = 0; p < width; ++p)
         {
 
-            for (std::vector<satRegion>::const_iterator region = regions.begin(); region != regions.end(); ++region)
+            for (SatRegionVector::const_iterator region = regions.begin(); region != regions.end(); ++region)
             {
-                if (p >= region->_x && p <= region->_x + region->_w&& i == region->_y
-                    ||
-                    i <= region->_y + region->_h && i >= region->_y && p == region->_x){
+                if ( ( ( p >= region->_x ) && ( p <= region->_x + region->_w ) && ( i == region->_y ) ) || ( ( i <= region->_y + region->_h ) && ( i >= region->_y ) && ( p == region->_x ) ) ) {
 
                     // draw once is sufficient
                     drawDebug(rgba, pixelPos, nc);
@@ -62,12 +54,12 @@ void drawRegions(uchar* rgba, uint width, uint height, const std::vector<satRegi
 /**
  * Draw a cross at position l into image rgba
  */
-void drawLight( uchar* rgba, uint width, uint height, const light &l, const uint nc)
+void drawLight( uchar* rgba, int width, int height, const Light &l, const uint nc)
 {
     int ci;
 
-    const uint x0 = static_cast<uint> (l._centroidPosition._x);
-    const uint y0 = static_cast<uint> (l._centroidPosition._y);
+    const uint x0 = static_cast<uint> (l._centroidPosition[0]);
+    const uint y0 = static_cast<uint> (l._centroidPosition[1]);
 
     const uint m = width*height*nc;
     for (int x = -1; x < 2; ++x)
@@ -84,22 +76,22 @@ void drawLight( uchar* rgba, uint width, uint height, const light &l, const uint
 
     // draw light area
     uint pixelPos = (l._y*width + l._x)*nc;
-    for (uint p = l._x; p < l._x+l._w && pixelPos < m; ++p){
+    for (int p = l._x; p < l._x+l._w && pixelPos < m; ++p){
         drawDebug(rgba, pixelPos, nc);
         pixelPos += nc;
     }
     pixelPos = ((l._y+l._h)*width + l._x)*nc;
-    for (uint p = l._x; p < l._x+l._w && pixelPos < m; ++p){
+    for (int p = l._x; p < l._x+l._w && pixelPos < m; ++p){
         drawDebug(rgba, pixelPos, nc);
         pixelPos += nc;
     }
     pixelPos = ((l._y)*width + l._x)*nc;
-    for (uint i = l._y; i < l._y+l._h && pixelPos < m; ++i){
+    for (int i = l._y; i < l._y+l._h && pixelPos < m; ++i){
          drawDebug(rgba, pixelPos, nc);
          pixelPos += nc*width;
     }
     pixelPos = ((l._y)*width + l._x+l._w)*nc;
-    for (uint i = l._y; i < l._y+l._h && pixelPos < m; ++i){
+    for (int i = l._y; i < l._y+l._h && pixelPos < m; ++i){
         drawDebug(rgba, pixelPos, nc);
         pixelPos += nc*width;
     }
@@ -109,7 +101,7 @@ void drawLight( uchar* rgba, uint width, uint height, const light &l, const uint
 
 
 
-void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<light> &lights, const std::vector<light> &mainLights, float * rgba, const uint width, const uint height, const uint nc)
+void debugDrawLight(const SatRegionVector& regions, const LightVector &lights, const LightVector &mainLights, float * rgba, const uint width, const uint height, const uint nc)
 {
     assert(nc >= 3);
 
@@ -138,17 +130,17 @@ void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<lig
 
 
     // drawRegions first
-    /*
+
     debugColorR = 0;
     debugColorG = 255;
     debugColorB = 0;
     debugColorA = 255;
 
-     drawRegions(&conv[0], width, height, regions, nc);
-    */
+//     drawRegions(&conv[0], width, height, regions, nc);
+
 
     // drawLights
-
+/*
     // draw Light above regions
     i = 0;
     lightNum = lights.size();
@@ -158,12 +150,12 @@ void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<lig
     debugColorB = 0;
     debugColorA = 255;
 
-    for (std::vector<light>::const_iterator l = lights.begin(); l != lights.end() && i < lightNum; ++l)
+    for (LightVector::const_iterator l = lights.begin(); l != lights.end() && i < lightNum; ++l)
     {
         drawLight(&conv[0], width, height, *l, nc);
         i++;
     }
-
+*/
     lightNum = mainLights.size();
     //lightNum = std::min(3, (int)lightNum);
     //std::cout << "MAINLIGHTS " << lightNum;
@@ -174,7 +166,7 @@ void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<lig
     debugColorA = 255;
 
     i = 0;
-    for (std::vector<light>::const_iterator l = mainLights.begin(); l != mainLights.end() && i < lightNum; ++l) {
+    for (LightVector::const_iterator l = mainLights.begin(); l != mainLights.end() && i < lightNum; ++l) {
         drawLight(&conv[0], width, height, *l, nc);
         i++;
     }
@@ -190,11 +182,10 @@ void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<lig
     debugColorA = 255;
 
     i = 0;
-    for (std::vector<light>::const_iterator l = mainLights.begin(); l != mainLights.end() && i < lightNum; ++l) {
+    for (LightVector::const_iterator l = mainLights.begin(); l != mainLights.end() && i < lightNum; ++l) {
         drawLight(&conv[0], width, height, *l, nc);
         i++;
     }
-
 
     ImageOutput* out = ImageOutput::create ("out/test_variance.png");
     ImageSpec specOut( width, height, nc, TypeDesc::UINT8);
@@ -203,5 +194,3 @@ void debugDrawLight(const std::vector<satRegion> &regions, const std::vector<lig
     out->write_image (TypeDesc::UINT8, &conv[0]);
 
 }
-
-#endif //EXTRACT_LIGHTS_VARIANCE_DEBUG_H

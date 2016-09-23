@@ -72,7 +72,7 @@ install(TARGETS extractLight
   RUNTIME DESTINATION bin
 )
 
-add_executable(extractLights ExtractLightsVariance.cpp)
+add_executable(extractLights extractLightsVariance.cpp SummedAreaTable.cpp SummedAreaTableRegion.cpp )
 target_link_libraries(extractLights ${TBB_LIBRARIES} ${PNG_LIBRARY} ${OIIO_LIBRARY} ${Boost_LIBRARIES} )
 
 install(TARGETS extractLights
@@ -116,6 +116,25 @@ install(TARGETS panoramaPacker
   RUNTIME DESTINATION bin
 )
 
-install(PROGRAMS process_environment.py prefilter_opencl.py ggx.cl
+install(PROGRAMS process_environment.py prefilter_opencl.py ggx.cl specularCubemapTest.sh extractlightTest.py
   DESTINATION bin
+  )
+
+
+add_custom_target(check)
+
+file(COPY testData DESTINATION .)
+file(COPY specularCubemapTest.sh DESTINATION .)
+file(COPY extractLightsTest.py DESTINATION .)
+file(COPY process_environment.py DESTINATION .)
+file(COPY prefilter_opencl.py DESTINATION .)
+file(COPY ggx.cl DESTINATION .)
+
+
+#execute_process(COMMAND ${CMAKE_PROGRAM} -E copy_if_different ${fileFrom} ${fileTo})
+  
+add_custom_command( TARGET check
+  POST_BUILD
+  COMMAND ./specularCubemapTest.sh
+  COMMAND ./extractLightsTest.py
 )

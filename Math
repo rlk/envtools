@@ -3,8 +3,7 @@
    Exracted from osg by cedric pinson
 */
 
-#ifndef MATH_H
-#define MATH_H 1
+#pragma once
 
 #include <iostream>
 #include <cmath>
@@ -1188,4 +1187,131 @@ inline const double& getUniformSampleOnConeWeightSum() {
 //      return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 //  }
 
-#endif
+// rgb to luminance
+template <typename T> T luminance(const T r, const T g, const T b) {
+    return r * 0.2125f + g * 0.7154f + b * 0.0721f;
+}
+
+// solid Angle
+template <typename T> T AreaElement( const T x, const T y )
+{
+    return atan2(x * y, sqrt(x * x + y * y + 1.0f));
+}
+
+// solid Angle: aka resolution independent results
+inline double texelPixelSolidAngleCommon(const float aU, const float aV, const uint width, const uint height)
+{
+    // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
+    // ( 0.5 is for texel center addressing)
+    const double U = (2.0 * (aU  + 0.5) / width ) - 1.0;
+    const double V = (2.0 * (aV  + 0.5) / height ) - 1.0;
+
+    // Shift from a demi texel, mean 1.0 / size  with U and V in [-1..1]
+    const double InvResolutionW = 1.0 / width;
+    const double InvResolutionH = 1.0 / height;
+
+    // U and V are the -1..1 texture coordinate on the current face.
+    // Get projected area for this Texel
+    const double x0 = U - InvResolutionW;
+    const double y0 = V - InvResolutionH;
+    const double x1 = U + InvResolutionW;
+    const double y1 = V + InvResolutionH;
+    const double SolidAngle = AreaElement(x0, y0) - AreaElement(x0, y1) - AreaElement(x1, y0)  + AreaElement(x1, y1);
+
+    return SolidAngle;
+}
+
+// a pixel to a solidAngle
+inline double texelPixelSolidAnglePanorama(const float aU, const float aV, const uint width, const uint height)
+{
+    return texelPixelSolidAngleCommon( aU, aV, width, height );
+}
+
+inline double texelPixelSolidAngleCubeMap(const float aU, const float aV, uint size)
+{
+    return texelPixelSolidAngleCommon( aU, aV , size, size );
+}
+
+// solid Angle: aka resolution independent results
+inline double texelPixelSolidAnglePanorama(const double aU, const double aV, const uint width, const uint height)
+{
+    // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
+    // ( 0.5 is for texel center addressing)
+    const double U = (2.0 * (aU  + 0.5) / width ) - 1.0;
+    const double V = (2.0 * (aV  + 0.5) / height ) - 1.0;
+
+    // Shift from a demi texel, mean 1.0 / size  with U and V in [-1..1]
+    const double InvResolutionW = 1.0 / width;
+    const double InvResolutionH = 1.0 / height;
+
+    // U and V are the -1..1 texture coordinate on the current face.
+    // Get projected area for this Texel
+    const double x0 = U - InvResolutionW;
+    const double y0 = V - InvResolutionH;
+    const double x1 = U + InvResolutionW;
+    const double y1 = V + InvResolutionH;
+    const double SolidAngle = AreaElement(x0, y0) - AreaElement(x0, y1) - AreaElement(x1, y0)  + AreaElement(x1, y1);
+
+    return SolidAngle;
+}
+
+
+
+static Vec3f CubemapFace[6][3] = {
+    { Vec3f(0,0,-1), Vec3f(0,-1,0), Vec3f(1,0,0) },// x positif
+    { Vec3f(0,0,1), Vec3f(0,-1,0), Vec3f(-1,0,0) }, // x negatif
+
+    { Vec3f(1,0,0), Vec3f(0,0,1), Vec3f(0,1,0) },  // y positif
+    { Vec3f(1,0,0), Vec3f(0,0,-1),Vec3f(0,-1,0) }, // y negatif
+
+    { Vec3f(1,0,0), Vec3f(0,-1,0), Vec3f(0,0,1) },  // z positif
+    { Vec3f(-1,0,0), Vec3f(0,-1,0),Vec3f(0,0,-1) } // z negatif
+};
+
+// major axis
+// direction     target                              sc     tc    ma
+// ----------    ---------------------------------   ---    ---   ---
+//  +rx          GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT   -rz    -ry   rx
+//  -rx          GL_TEXTURE_CUBE_MAP_NEGATIVE_X_EXT   +rz    -ry   rx
+//  +ry          GL_TEXTURE_CUBE_MAP_POSITIVE_Y_EXT   +rx    +rz   ry
+//  -ry          GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_EXT   +rx    -rz   ry
+//  +rz          GL_TEXTURE_CUBE_MAP_POSITIVE_Z_EXT   +rx    -ry   rz
+//  -rz          GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_EXT   -rx    -ry   rz
+// s   =   ( sc/|ma| + 1 ) / 2
+// t   =   ( tc/|ma| + 1 ) / 2
+
+inline void vectToTexelCoordGeneric(const Vec3f& direction, uint width, uint height, float& u, float& v, int& faceIndex)
+{
+    int bestAxis = 0;
+    if ( fabs(direction[1]) > fabs(direction[0]) ) {
+        bestAxis = 1;
+        if ( fabs(direction[2]) > fabs(direction[1]) )
+            bestAxis = 2;
+    } else if ( fabs(direction[2]) > fabs(direction[0]) )
+        bestAxis = 2;
+
+    // select the index of cubemap face
+    faceIndex = bestAxis*2 + ( direction[bestAxis] > 0 ? 0 : 1 );
+    float bestAxisValue = direction[bestAxis];
+    float denom = fabs( bestAxisValue );
+
+    //float maInv = 1.0/denom;
+    Vec3f dir = direction * 1.0/denom;
+
+    float sc = CubemapFace[faceIndex][0] * dir;
+    float tc = CubemapFace[faceIndex][1] * dir;
+    float ppx = (sc + 1.0) * 0.5 * (width - 1);
+    float ppy = (tc + 1.0) * 0.5 * (height - 1);
+
+    u = ppx;
+    v = ppy;
+}
+
+inline void vectToTexelCoordCubeMap(const Vec3f& direction, uint size, float& u, float& v, int& faceIndex ) {
+    vectToTexelCoordGeneric( direction, size, size, u, v, faceIndex );
+}
+
+inline void vectToTexelCoordPanorama(const Vec3f& direction, uint width, uint height, float& u, float& v ) {
+    int faceIndex = 0;
+    vectToTexelCoordGeneric( direction, width, height, u, v, faceIndex );
+}

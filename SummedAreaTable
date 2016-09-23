@@ -1,12 +1,8 @@
 /* -*-c++-*- */
-
 #pragma once
 
-#ifndef SUMMED_AREA_TABLE_H
-#define SUMMED_AREA_TABLE_H 1
+#include "Cubemap"
 
-
-#include "ExtractLightsVariance"
 
 /**
  * Luminance Summed Area Table
@@ -19,7 +15,7 @@ class SummedAreaTable
 {
 protected:
 
-    uint _width, _height;
+    int _width, _height;
 
     // perf: could be AOS instead of SAO
     // as usage is AOS (creation is SAO though)
@@ -35,7 +31,48 @@ protected:
     std::vector<double> _g;
     std::vector<double> _b;
 
+    // error reducing values
+    double _minLum, _maxLum;
+    double _minPonderedLum, _maxPonderedLum;
+    double _minR, _maxR;
+    double _minG, _maxG;
+    double _minB, _maxB;
+    double _weightAccum;
+    double _sum;
+
+    
 public:
+    double getMaxLum() const 
+    {
+        return _maxLum;        
+    }
+    
+    double getSum() const 
+    {
+        return _sum;        
+    }
+
+    double getMaxPonderedLum() const 
+    {
+        return _maxPonderedLum;        
+    }
+    double getWeightAccumulation() const
+    {
+        return _weightAccum;
+    }    
+    double getMaxR() const 
+    {
+        return _maxR;        
+    }
+    double getMaxG() const 
+    {
+        return _maxG;        
+    }
+    double getMaxB() const 
+    {
+        return _maxB;        
+    }
+    
     double I(const int x, const int y) const
     {
         if (x < 0 || y < 0) return 0.0;
@@ -105,122 +142,8 @@ public:
         return _b[i];
     }
 
-public:
+    void createLum(float* rgb, const uint width, const uint height, const uint nc);
 
-
-    void createLum(float* rgb, const uint width, const uint height, const uint nc)
-    {
-        assert(nc > 2);
-
-        _width = width;
-        _height = height;
-
-        const uint imgSize = width * height;
-
-        _sat.clear();
-        _sat.resize(imgSize);
-        _sat1.clear();
-        _sat1.resize(imgSize);
-        _sat2.clear();
-        _sat2.resize(imgSize);
-        _sat3.clear();
-        _sat3.resize(imgSize);
-        _sat4.clear();
-        _sat4.resize(imgSize);
-        _sat5.clear();
-        _sat5.resize(imgSize);
-
-        _r.clear();
-        _r.resize(imgSize);
-        _g.clear();
-        _g.resize(imgSize);
-        _b.clear();
-        _b.resize(imgSize);
-
-        _sat[0] = 0.0;
-        _sat1[0] = 0.0;
-        _sat2[0] = 0.0;
-        _sat3[0] = 0.0;
-        _sat4[0] = 0.0;
-        _sat5[0] = 0.0;
-        _r[0] = 0.0;
-        _g[0] = 0.0;
-        _b[0] = 0.0;
-
-        for (uint y = 0; y < height; ++y) {
-            for (uint x = 0; x < width;  ++x) {
-                const uint i = y*width + x;
-
-                const double r = rgb[i*nc + 0];
-                const double g = rgb[i*nc + 1];
-                const double b = rgb[i*nc + 2];
-
-                double ixy = luminance(r,g,b);
-
-                // the latitude-longitude format overrepresents the area of regions near the poles.
-                // To compensate for this, the pixels of the probe image
-                // should first be scaled by cosφ.
-                const double lat = PI2 - PI * y / height;
-                ixy *= cos(lat);
-
-                // https://en.wikipedia.org/wiki/Summed_area_table
-                _sat[i] = ixy + I(x-1, y) + I(x, y-1) - I(x-1, y-1);
-
-                _r[i]   = r   + R(x-1, y) + R(x, y-1) - R(x-1, y-1);
-                _g[i]   = g   + G(x-1, y) + G(x, y-1) - G(x-1, y-1);
-                _b[i]   = b   + B(x-1, y) + B(x, y-1) - B(x-1, y-1);
-
-            }
-        }
-
-        // integral log
-        for (uint y = 0; y < _height; ++y)
-        {
-            for (uint x = 0; x < _width;  ++x)
-            {
-                const uint i = y*width + x;
-
-                double sum = I(x, y);
-                if (sum > 0) sum = log(I(x, y));
-
-                _sat1[i] = sum + I1(x-1, y) + I1(x, y-1) - I1(x-1, y-1);
-            }
-        }
-
-        // Integral image of higher power
-        // http://vision.okstate.edu/pubs/ssiai_tp_1.pdf
-        // integral 2
-        for (uint y = 0; y < _height; ++y)
-        {
-            for (uint x = 0; x < _width;  ++x)
-            {
-                const uint i = y*width + x;
-                _sat2[i] = I(x, y)*I(x, y) + I2(x-1, y) + I2(x, y-1) - I2(x-1, y-1);
-            }
-        }
-        // integral 3
-        for (uint y = 0; y < _height; ++y) {
-            for (uint x = 0; x < _width;  ++x) {
-                const uint i = y*width + x;
-                _sat3[i] = I(x, y)*I(x, y)*I(x, y) + I3(x-1, y) + I3(x, y-1) - I3(x-1, y-1);
-            }
-        }
-        // integral 4
-        for (uint y = 0; y < _height; ++y) {
-            for (uint x = 0; x < _width;  ++x) {
-                const uint i = y*width + x;
-                _sat4[i] = I(x, y)*I(x, y)*I(x, y)*I(x, y) + I4(x-1, y) + I4(x, y-1) - I4(x-1, y-1);
-            }
-        }
-        // integral 5
-        for (uint y = 0; y < _height; ++y) {
-            for (uint x = 0; x < _width;  ++x) {
-                const uint i = y*width + x;
-                _sat5[i] = I(x, y)*I(x, y)*I(x, y)*I(x, y) + I5(x-1, y) + I5(x, y-1) - I5(x-1, y-1);
-            }
-        }
-
-    }
     uint width() const  { return _width;  }
     uint height() const { return _height; }
 
@@ -274,5 +197,3 @@ public:
     }
 
 };
-
-#endif // #ifndef SUMMED_AREA_TABLE_H
