@@ -1,0 +1,199 @@
+/* -*-c++-*- */
+#pragma once
+
+#include "Cubemap"
+
+
+/**
+ * Luminance Summed Area Table
+ * https://en.wikipedia.org/wiki/Summed_area_table
+ * Aka Integral Image (for order > 1)
+ * Accelerate Sum computation
+ * Create a luminance summed area table from an image.
+ */
+class SummedAreaTable
+{
+protected:
+
+    int _width, _height;
+
+    // perf: could be AOS instead of SAO
+    // as usage is AOS (creation is SAO though)
+    std::vector<double> _sat;
+
+    std::vector<double> _sat1;
+    std::vector<double> _sat2;
+    std::vector<double> _sat3;
+    std::vector<double> _sat4;
+    std::vector<double> _sat5;
+
+    std::vector<double> _r;
+    std::vector<double> _g;
+    std::vector<double> _b;
+
+    // error reducing values
+    double _minLum, _maxLum;
+    double _minPonderedLum, _maxPonderedLum;
+    double _minR, _maxR;
+    double _minG, _maxG;
+    double _minB, _maxB;
+    double _weightAccum;
+    double _sum;
+
+    
+public:
+    double getMaxLum() const 
+    {
+        return _maxLum;        
+    }
+    
+    double getSum() const 
+    {
+        return _sum;        
+    }
+
+    double getMaxPonderedLum() const 
+    {
+        return _maxPonderedLum;        
+    }
+    double getWeightAccumulation() const
+    {
+        return _weightAccum;
+    }    
+    double getMaxR() const 
+    {
+        return _maxR;        
+    }
+    double getMaxG() const 
+    {
+        return _maxG;        
+    }
+    double getMaxB() const 
+    {
+        return _maxB;        
+    }
+    
+    double I(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat[i];
+    }
+
+    double I1(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat1[i];
+    }
+
+    double I2(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat2[i];
+    }
+
+    double I3(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat3[i];
+    }
+
+    double I4(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat4[i];
+    }
+    double I5(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _sat5[i];
+    }
+
+    double R(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _r[i];
+    }
+    double G(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _g[i];
+    }
+    double B(const int x, const int y) const
+    {
+        if (x < 0 || y < 0) return 0.0;
+        if (x >= _width || y >= _height) return 0.0;
+        const uint i = y*_width + x;
+        return _b[i];
+    }
+
+    void createLum(float* rgb, const uint width, const uint height, const uint nc);
+
+    uint width() const  { return _width;  }
+    uint height() const { return _height; }
+
+    /**
+     * Returns the sum of a region defined by A,B,C,D.
+     *
+     * A----B
+     * |    |  sum = C+A-B-D
+     * D----C
+     */
+    double sum(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I(cx, cy) + I(ax, ay) - I(bx, by) - I(dx, dy);
+    }
+
+    double sumR(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return R(cx, cy) + R(ax, ay) - R(bx, by) - R(dx, dy);
+    }
+
+    double sumG(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return G(cx, cy) + G(ax, ay) - G(bx, by) - G(dx, dy);
+    }
+
+    double sumB(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return B(cx, cy) + B(ax, ay) - B(bx, by) - B(dx, dy);
+    }
+
+    double sum1(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I1(cx, cy) + I1(ax, ay) - I1(bx, by) - I1(dx, dy);
+    }
+
+    double sum2(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I2(cx, cy) + I2(ax, ay) - I2(bx, by) - I2(dx, dy);
+    }
+    double sum3(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I3(cx, cy) + I3(ax, ay) - I3(bx, by) - I3(dx, dy);
+    }
+    double sum4(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I4(cx, cy) + I4(ax, ay) - I4(bx, by) - I4(dx, dy);
+    }
+    double sum5(const int ax, const int ay, const int bx, const int by, const int cx, const int cy, const int dx, const int dy) const
+    {
+        return I5(cx, cy) + I5(ax, ay) - I5(bx, by) - I5(dx, dy);
+    }
+
+};

@@ -1,0 +1,9 @@
+build
+debug
+release
+*.pyc
+etc
+.git
+.ccache
+data
+*.tif

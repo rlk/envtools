@@ -1,0 +1,246 @@
+/* -*-c++-*- */
+#pragma once
+
+#include "Math"
+#include <vector>
+
+class SummedAreaTable;
+
+/**
+ * A subregion in a SummedAreaTable.
+ */
+struct SatRegion
+{
+public:
+
+    const SummedAreaTable* _sat;
+
+    // SatRegion non-discrete center
+    Vec2d coord;
+
+    int _x, _y;
+    int _w, _h;
+
+    // respectively for mean, variance, skewness, kurtosis
+    double _sum, _sum1, _sum2, _sum3,_sum4, _sum5;
+
+    // color sums allowing to deduce mean color
+    double _r, _g, _b;
+
+    double getSum() const
+    {
+        return _sum;
+    }
+
+    double getMean() const
+    {
+        return _sum / areaSize();
+    }
+
+    double getGeometricMean() const
+    {
+        // log average fomulae
+        return exp(_sum1 / areaSize());
+    }
+
+    //https://en.wikipedia.org/wiki/Summed_area_table#Extensions
+    double getVariance() const
+    {
+        const double mean =  getMean();
+        return (_sum2 / areaSize()) - (mean*mean);
+    }
+
+    //https://en.wikipedia.org/wiki/Summed_area_table#Extensions
+    double getGeometricVariance() const
+    {
+        const double gmean =  getGeometricMean();
+        return (_sum2 / areaSize()) - (gmean*gmean);
+    }
+
+    // http://vision.okstate.edu/pubs/ssiai_tp_1.pdf
+    double getDeviation() const
+    {
+        double variance= _sum2 / areaSize();
+        return sqrt(variance);
+    }
+
+    // http://vision.okstate.edu/pubs/ssiai_tp_1.pdf
+    double getSkewness() const
+    {
+        double deviation = getDeviation();
+        return deviation * deviation *  _sum3 / areaSize();
+    }
+
+    // http://vision.okstate.edu/pubs/ssiai_tp_1.pdf
+    double getKurtosis() const
+    {
+        double deviation = getDeviation();
+        return deviation * deviation *  deviation * _sum4 / areaSize();
+    }
+
+    //Two Stage Importance Sampling for Direct Lighting
+    // page 4, equation 2
+    // Cline etAll 2006
+    double getRegionWeight() const;
+
+    //Two Stage Importance Sampling for Direct Lighting
+    // page 4, equation 3
+    // Cline etAll 2006
+    double getCornerDeviation() const;
+
+    //Two Stage Importance Sampling for Direct Lighting
+    // page 4, equation 3
+    // Cline etAll 2006
+    double splitPotential() const
+    {
+        // psplit(R) = σf(R) sum(R) area(R), (3)
+        // where sum(R)is the sum of the environment map over region
+        // R, area(R)is the area of the region, and σf(R)is the standard
+        // deviation of the f values at the corners of R:
+
+        return getCornerDeviation() * getSum() * areaSize();
+    };
+
+    void create(const int x, const int y, const uint w, const uint h, const SummedAreaTable* sat);
+
+
+//#define VARIANCE_MIN 1
+#ifndef VARIANCE_MIN
+
+// MEDIAN CUT Fastest by far
+
+    // median cut split criteria
+    double splitCriteria(const SatRegion &sat) const
+    {
+        // median cut
+        return sat.getSum() * 2.0 >= getSum();
+
+    }
+
+    void split_w(SatRegion& A) const
+    {
+        for (int  w = 1; w <= _w; ++w)
+        {
+            A.create(_x, _y, w, _h, _sat);
+
+            // if region left has approximately half the energy of the entire thing stahp
+            if (splitCriteria(A))
+                break;
+        }
+    }
+
+    void split_h(SatRegion& A) const
+    {
+        for (int h = 1; h <= _h; ++h)
+        {
+            A.create(_x, _y, _w, h, _sat);
+
+            // if region top has approximately half the energy of the entire thing stahp
+            if (splitCriteria(A))
+                break;
+        }
+    }
+
+#else
+    // VARIANCE MIN: slowest, better balance
+    double splitCriteria() const
+    {
+        return
+            splitPotential();
+            //getMean()
+            //getGeometricMean()
+            //getGeometricVariance()
+            //getDeviation()
+            //getSkewness()
+            //getKurtosis()
+            //getVariance()
+            //getSum()
+                ;
+    }
+
+
+    void split_w(SatRegion& A) const
+    {
+        assert(_w > 2);
+
+        double minV = DBL_MAX;
+        double maxV = DBL_MIN;
+
+        SatRegion B;
+        uint minSplt;
+        for (int  w = 1; w <= _w; ++w)
+        {
+            A.create(_x, _y, w, _h, _sat);
+            B.create(_x + w-1, _y, _w - w, _h, _sat);
+
+            // maximum of the two sub-regions' variances is minimized.
+            maxV = std::max(A.splitCriteria(), B.splitCriteria());
+
+            if(minV > maxV) {
+                minV = maxV;
+                minSplt = w;
+            }
+        }
+        A.create(_x, _y, minSplt, _h, _sat);
+    }
+
+    void split_h(SatRegion& A) const
+    {
+        assert(_h > 2);
+
+        double minV = DBL_MAX;
+        double maxV = DBL_MIN;
+
+        SatRegion B;
+        uint minSplt;
+        for (int h = 1; h <= _h; ++h)
+        {
+            A.create(_x, _y, _w, h, _sat);
+            B.create(_x, _y + h-1, _w, _h - h, _sat);
+
+            // maximum of the two sub-regions' variances is minimized.
+            maxV = std::max(A.splitCriteria(), B.splitCriteria());
+
+            if(minV > maxV){
+                minV = maxV;
+                minSplt = h;
+            }
+        }
+        A.create(_x, _y, _w, minSplt, _sat);
+
+    }
+
+#endif// VARIANCE_MIN
+
+    /**
+     * Split region horizontally into subregions A and B.
+     */
+    void split_w(SatRegion& A, SatRegion& B) const
+    {
+        split_w(A);
+        B.create(_x + (A._w-1), _y, _w - A._w, _h, _sat);
+    }
+
+    /**
+     * Split region vertically into subregions A and B.
+     */
+    void split_h(SatRegion& A, SatRegion& B) const
+    {
+        split_h(A);
+        B.create(_x, _y + (A._h-1), _w, _h - A._h, _sat);
+    }
+
+    Vec2d centroid() const
+    {
+        return Vec2d( _x, _y ) + Vec2d( _w, _h) * 0.5;
+    }
+
+    double areaSize() const
+    {
+        return _w * _h;
+    }
+
+
+};
+
+typedef std::vector<SatRegion> SatRegionVector;
