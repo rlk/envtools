@@ -116,7 +116,7 @@ install(TARGETS panoramaPacker
   RUNTIME DESTINATION bin
 )
 
-install(PROGRAMS process_environment.py prefilter_opencl.py ggx.cl specularCubemapTest.sh extractlightTest.py
+install(PROGRAMS process_environment.py prefilter_opencl.py ggx.cl 
   DESTINATION bin
   )
 
